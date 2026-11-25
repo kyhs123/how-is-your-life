@@ -365,7 +365,7 @@ def 提问(
         for 条目 in 召回:
             块.append(
                 f'<li><a href="/entries/{q(条目["id"])}">'
-                f'<span class="when">{e(条目["ts"][:10])}</span>'
+                f'<span class="when">{e((条目.get("when") or "").strip() or 条目["ts"][:10])}</span>'
                 f'<span class="badge l{条目["level"]}">{档位名.get(条目["level"], "?")}</span>'
                 f'<span class="did">{e(条目["did"])}</span></a></li>'
             )
@@ -477,7 +477,7 @@ def 目标详情(令牌: str, 目标: dict, 证据: dict) -> str:
             for 条目 in sorted(能拿出手, key=lambda x: (-x["level"], x["ts"]), )[:5]:
                 行.append(
                     f'<li><a href="/entries/{q(条目["id"])}">'
-                    f'<span class="when">{e(条目["ts"][:10])}</span>'
+                    f'<span class="when">{e((条目.get("when") or "").strip() or 条目["ts"][:10])}</span>'
                     f'<span class="badge l{条目["level"]}">{档位名[条目["level"]]}</span>'
                     f'<span class="did">{e(条目["did"])}</span></a></li>'
                 )
@@ -587,7 +587,7 @@ def 章节详情(令牌: str, 章节: dict, 条目们: list[dict]) -> str:
         for 条目 in 条目们:
             块.append(
                 f'<li><a href="/entries/{q(条目["id"])}">'
-                f'<span class="when">{e(条目["ts"][:10])}</span>'
+                f'<span class="when">{e((条目.get("when") or "").strip() or 条目["ts"][:10])}</span>'
                 f'<span class="badge l{条目["level"]}">{档位名.get(条目["level"], "?")}</span>'
                 f'<span class="did">{e(条目["did"])}</span></a></li>'
             )
