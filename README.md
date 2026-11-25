@@ -8,11 +8,16 @@
 
 ## 现在做到哪了
 
-第 1 周：**录入 + 抽取 + 索引**。能记，能压缩，能建索引。
-第 2 周的「三路检索 + `life ask`」才是这个项目的验证点——它能不能提起你忘掉的事。还没做。
+| 周 | 状态 |
+|---|---|
+| 1 | ✅ 录入 + 抽取 + 索引 + 只读看板 |
+| 2 | ✅ **三路检索 + `life ask`**（本项目的验证点：它能不能提起你忘掉的事） |
+| 3 | 目标 + 证据视图 + 晋升 |
+| 4 | 情感记录 + 画像 + 回顾 + 完整 README + demo 数据 |
+| 5 | 可编辑的网页界面 |
 
 功能清单和说明文档见 [docs/features/README.md](docs/features/README.md)；
-完整设计见 [docs/DESIGN.md](docs/DESIGN.md)。
+完整设计见 [docs/DESIGN.md](docs/DESIGN.md)；已经拍过的决定见 [docs/决策记录.md](docs/决策记录.md)。
 
 ## 安装（三步）
 
@@ -44,6 +49,12 @@ python -m venv .venv
 
 # 4. 从 markdown 重建索引（索引删了也能跑）
 .\.venv\Scripts\life.exe reindex
+
+# 5. 问一句，它带着你的旧记录回答
+.\.venv\Scripts\life.exe ask "我好累，感觉什么都没做成"
+
+# 6. 只看它翻出了哪些旧记录，不调对话模型（省钱、方便排查）
+.\.venv\Scripts\life.exe ask "OAuth" --dry-run
 ```
 
 如果屏幕上中文变成乱码，先敲一次 `chcp 65001` 再试。
@@ -61,8 +72,9 @@ python -m venv .venv
 ## 代码结构
 
 ```
-life/         程序本体（cli 命令入口 / store 文件读写 / extract 抽取 / index 索引 / llm 模型网关 / board 看板）
-life/prompts/ 抽取用的 prompt，纯文本，改它不用动代码
+life/         程序本体（cli 命令入口 / store 文件读写 / extract 抽取 / index 索引 /
+              llm 模型网关 / retrieve 三路检索 / ask 对话 / board 看板）
+life/prompts/ 抽取和对话用的 prompt，纯文本，改它们不用动代码
 vault/        你的数据（不进仓库）
 tests/        自动测试
 docs/         设计文档 + 功能说明 + 学习总结
