@@ -93,18 +93,26 @@ def 今天(
     块.append(
         f"""<section class="记一条">
   <h2>记一条</h2>
-  <form method="post" action="/add">
+  <form method="post" action="/add" enctype="multipart/form-data">
     <input type="hidden" name="token" value="{e(令牌)}">
     <label class="sr" for="text">今天做了什么</label>
-    <textarea id="text" name="text" rows="3" required maxlength="2000"
-      placeholder="今天做了什么？带上具体细节最好，比如：&#10;把 OAuth 调通了，卡在 state 参数签名，调了 4 小时"></textarea>
+    <textarea id="text" name="text" rows="3" maxlength="2000"
+      placeholder="今天做了什么？带上具体细节最好，比如：&#10;把 OAuth 调通了，卡在 state 参数签名，调了 4 小时&#10;&#10;只传文件、不写字也可以。"></textarea>
+    <p class="file">
+      <label for="file">或者传个文件（只传文件不写字也行）</label>
+      <input type="file" id="file" name="file"
+        accept=".png,.jpg,.jpeg,.webp,.gif,.txt,.md,.docx">
+      <span class="hint">图片 png/jpg/webp/gif（≤8MB）· 文档 txt/md/docx（≤8MB）</span>
+    </p>
     <p class="checks">
       <label><input type="checkbox" name="emotion" value="1"> 这是感受，不是做了什么</label>
       <label><input type="checkbox" name="private" value="1"> 只存本地（不发给模型）</label>
+      <label><input type="checkbox" name="keep" value="1"> 保留原文件（默认只留文字）</label>
     </p>
     <p class="actions"><button type="submit">记下来</button>
       <span class="hint">先落盘，再压缩成一句话。断网也不会丢。</span></p>
   </form>
+  <p class="hint">图片会读一遍（OCR 全文留下，原图删掉）；文档会先在本地抽出文字，再压成一句话。</p>
 </section>"""
     )
 
@@ -683,6 +691,11 @@ form label{display:block;margin:0 0 12px;font-size:13px;color:var(--淡)}
 .checks{display:flex;flex-wrap:wrap;gap:16px;margin:10px 0 6px}
 .checks label{display:flex;align-items:center;gap:6px;margin:0;font-size:13px;color:var(--淡)}
 .checks input{width:auto;margin:0}
+.file{margin:14px 0 4px}
+.file label{display:block;font-size:13px;color:var(--淡);margin:0 0 6px}
+.file input[type=file]{width:100%;padding:8px;font-size:13px;background:var(--卡);
+  border:1px dashed var(--线);border-radius:6px;color:var(--淡)}
+.file .hint{display:block;margin-top:5px}
 .actions{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:12px 0 0}
 button{font:inherit;padding:7px 16px;border-radius:6px;border:1px solid var(--点);
   background:var(--点);color:#fff;cursor:pointer}

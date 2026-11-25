@@ -23,6 +23,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Callable
 
 from life import config, goal, index, pages, promote, recorder, retrieve, store
+from life import uploads as uploads模块
 
 最大请求体 = 64 * 1024  # 64KB。表单填不出一百个字，再大多半是攻击
 每页条数 = 50
@@ -197,13 +198,25 @@ class 处理器(BaseHTTPRequestHandler):
     def _出错(self, 状态: int, 标题: str, 说明: str) -> None:
         self._页面(状态, pages.消息(self.令牌, 标题, 说明))
 
-    def _读表单(self) -> dict[str, str]:
+    def _读请求体(self) -> tuple[dict[str, str], list[dict]]:
+        """读一次请求体，拆成（普通字段，上传的文件）。
+
+        格式由 Content-Type 决定：纯文字是 urlencoded，带文件是 multipart。
+        上限也分两种：文字 64KB，带文件 12MB。
+        """
         长度 = int(self.headers.get("Content-Length") or 0)
-        if 长度 <= 0 or 长度 > 最大请求体:
-            return {}
-        原始 = self.rfile.read(长度).decode("utf-8", errors="replace")
-        解析 = urllib.parse.parse_qs(原始, keep_blank_values=True)
-        return {键: 值[0] for 键, 值 in 解析.items()}
+        if 长度 <= 0:
+            return {}, []
+        类型 = self.headers.get("Content-Type") or ""
+        上限 = (
+            uploads模块.最大整体字节 if 类型.startswith("multipart/") else 最大请求体
+        )
+        if 长度 > 上限:
+            raise uploads模块.上传错误(
+                f"这次提交太大了（上限 {上限 // (1024 * 1024)}MB）。"
+            )
+        原始 = self.rfile.read(长度)
+        return uploads模块.解析(类型, 原始)
 
     # ── 分发 ──
 
@@ -459,7 +472,12 @@ class 处理器(BaseHTTPRequestHandler):
             )
             return
 
-        表单 = self._读表单()
+        try:
+            表单, 文件们 = self._读请求体()
+        except uploads模块.上传错误 as 错误:
+            self._今天(str(错误), 状态=HTTPStatus.BAD_REQUEST)
+            return
+
         if not self._令牌合法(表单):
             self._出错(HTTPStatus.FORBIDDEN, "拒绝了", "令牌不对（页面开了太久？刷新一下再试）。")
             return
@@ -467,7 +485,7 @@ class 处理器(BaseHTTPRequestHandler):
         路径 = urllib.parse.urlparse(self.path).path
 
         if 路径 == "/add":
-            self._记一条(表单)
+            self._记一条(表单, 文件们)
         elif 路径.startswith("/entries/") and 路径.endswith("/settle"):
             self._确认(urllib.parse.unquote(路径[len("/entries/") : -len("/settle")]))
         elif 路径.startswith("/entries/"):
@@ -481,18 +499,48 @@ class 处理器(BaseHTTPRequestHandler):
         else:
             self._出错(HTTPStatus.NOT_FOUND, "没有这个页面", f"路径：{路径}")
 
-    def _记一条(self, 表单: dict[str, str]) -> None:
+    def _记一条(self, 表单: dict[str, str], 文件们: list[dict] | None = None) -> None:
         原文 = (表单.get("text") or "").strip()
-        if not 原文:
-            self._今天("什么都没写。再试一次？", 状态=HTTPStatus.BAD_REQUEST)
+        文件们 = 文件们 or []
+        保留原文件 = 表单.get("keep") == "1"
+
+        if not 原文 and not 文件们:
+            self._今天("什么都没写，也没选文件。再试一次？", 状态=HTTPStatus.BAD_REQUEST)
             return
 
-        结果 = recorder.记录一条(
-            原文,
-            情感=表单.get("emotion") == "1",
-            私密=表单.get("private") == "1",
-            提示=lambda _: None,
-        )
+        临时: Path | None = None
+        try:
+            if 文件们:
+                文件 = 文件们[0]
+                try:
+                    类型, 后缀 = uploads模块.判定(文件["文件名"], 文件["数据"])
+                except uploads模块.上传错误 as 错误:
+                    self._今天(str(错误), 状态=HTTPStatus.BAD_REQUEST)
+                    return
+
+                临时 = self._存上传(文件["数据"], 后缀)
+
+                结果 = recorder.记录一条(
+                    原文,
+                    图片=临时 if 类型 == "image" else None,
+                    文档=临时 if 类型 == "document" else None,
+                    文档原名=文件["文件名"],
+                    保留原文件=保留原文件,
+                    情感=表单.get("emotion") == "1",
+                    私密=表单.get("private") == "1",
+                    提示=lambda _: None,
+                )
+            else:
+                结果 = recorder.记录一条(
+                    原文,
+                    情感=表单.get("emotion") == "1",
+                    私密=表单.get("private") == "1",
+                    提示=lambda _: None,
+                )
+        finally:
+            # 服务器自己写的这份临时副本用完就删；recorder 已经另外存了一份
+            if 临时 is not None:
+                临时.unlink(missing_ok=True)
 
         if 结果["状态"] == "输入有问题":
             self._今天(结果["错误"], 状态=HTTPStatus.BAD_REQUEST)
@@ -506,6 +554,14 @@ class 处理器(BaseHTTPRequestHandler):
             self._今天("这条之前记过了，没重复存。")
         else:
             self._跳("/")
+
+    def _存上传(self, 数据: bytes, 后缀: str) -> Path:
+        """把上传的东西写进 vault 的暂存目录。文件名一律自己取，不用用户给的名字。"""
+        目录 = store.确保vault就绪() / "inbox" / "文件暂存"
+        目录.mkdir(parents=True, exist_ok=True)
+        路径 = 目录 / f"上传-{secrets.token_hex(6)}{后缀}"
+        路径.write_bytes(数据)
+        return 路径
 
     def _改条目(self, 记录id: str, 表单: dict[str, str]) -> None:
         try:

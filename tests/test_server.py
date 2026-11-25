@@ -70,10 +70,13 @@ def 假抽取(monkeypatch):
 # ── 小工具 ───────────────────────────────────────────────────
 
 
-def 请求(端口, 方法, 路径, *, 表单=None, 主机=None, 来源=None):
-    连接 = http.client.HTTPConnection("127.0.0.1", 端口, timeout=20)
+def 请求(端口, 方法, 路径, *, 表单=None, 主机=None, 来源=None, 原始=None, 类型=None):
+    连接 = http.client.HTTPConnection("127.0.0.1", 端口, timeout=30)
     头, 体 = {}, None
-    if 表单 is not None:
+    if 原始 is not None:
+        体 = 原始
+        头["Content-Type"] = 类型 or "application/octet-stream"
+    elif 表单 is not None:
         体 = urllib.parse.urlencode(表单)
         头["Content-Type"] = "application/x-www-form-urlencoded"
     if 主机 is not None:
@@ -477,3 +480,162 @@ def test_别的端口的来源会被拒(临时工作区, 站):
         来源="http://127.0.0.1:1",
     )
     assert 状态 == 403
+
+
+# ── 上传：图片与文件 ─────────────────────────────────────────
+
+PNG1像素 = (
+    b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01"
+    b"\x08\x06\x00\x00\x00\x1f\x15\xc4\x89\x00\x00\x00\nIDATx\x9cc\x00\x01\x00\x00"
+    b"\x05\x00\x01\r\n-\xb4\x00\x00\x00\x00IEND\xaeB`\x82"
+)
+
+
+def 多段(字段: dict, 文件=None, 边界="----lifeTestBoundary"):
+    段 = []
+    for 键, 值 in 字段.items():
+        段.append(
+            f"--{边界}\r\nContent-Disposition: form-data; name=\"{键}\"\r\n\r\n{值}\r\n".encode("utf-8")
+        )
+    if 文件:
+        名, 数据 = 文件
+        段.append(
+            (
+                f"--{边界}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"{名}\"\r\n"
+                f"Content-Type: application/octet-stream\r\n\r\n"
+            ).encode("utf-8")
+            + 数据
+            + b"\r\n"
+        )
+    段.append(f"--{边界}--\r\n".encode("utf-8"))
+    return b"".join(段), f"multipart/form-data; boundary={边界}"
+
+
+def 造docx(正文: str) -> bytes:
+    import io
+    import zipfile
+
+    内存 = io.BytesIO()
+    with zipfile.ZipFile(内存, "w") as 包:
+        包.writestr("[Content_Types].xml", "<Types/>")
+        包.writestr(
+            "word/document.xml",
+            f"<w:document><w:body><w:p><w:r><w:t>{正文}</w:t></w:r></w:p></w:body></w:document>",
+        )
+    return 内存.getvalue()
+
+
+@pytest.fixture()
+def 假看图(monkeypatch):
+    """图片抽取：返回 OCR 全文 + 摘要 + 一条 claim。"""
+
+    def 调用(任务名, 系统提示, 用户内容, **kw):
+        import json
+
+        return llm.模型回复(
+            文本=json.dumps(
+                {
+                    "ocr_text": "报错原文：KeyError 'chapter'\n第 218 行",
+                    "digest": "终端截图：一个 KeyError",
+                    "entries": [
+                        {
+                            "did": "修掉 KeyError chapter，pop 没给默认值",
+                            "body": "修掉 KeyError chapter，pop 没给默认值",
+                            "part": "record",
+                            "minutes": 0,
+                            "outcome": "done",
+                            "anchors": {"tech": ["KeyError"], "people": [], "link": ""},
+                            "emotion": {"valence": 0, "arousal": 0.3, "trigger": "", "quote": ""},
+                            "level": 2,
+                            "goal": "",
+                            "blockers": [],
+                        }
+                    ],
+                },
+                ensure_ascii=False,
+            ),
+            输入token=1, 输出token=1, 模型名="测试", 降级到第几级=1,
+        )
+
+    monkeypatch.setattr(llm, "调用", 调用)
+
+
+def test_传一张图片能记下一条(临时工作区, 站, 假看图):
+    体, 类型 = 多段({"token": 令牌(站)}, 文件=("截图.png", PNG1像素))
+    状态, 页面, _ = 请求(站, "POST", "/add", 原始=体, 类型=类型)
+    assert 状态 in (200, 303), 页面
+
+    文件们 = list((临时工作区 / "vault" / "now").rglob("*.md"))
+    assert len(文件们) == 1
+
+    # OCR 全文必须留下（原图删掉之后，这是那张图唯一的话）
+    全文文件 = list((临时工作区 / "vault" / "media").glob("*.md"))
+    assert 全文文件, "media 里应该有一份 OCR 全文"
+    正文 = 全文文件[0].read_text(encoding="utf-8")
+    assert "KeyError" in 正文
+    assert "终端截图" in 正文
+
+    # 原图默认不留
+    暂存图 = list((临时工作区 / "vault" / "inbox" / "图片暂存").glob("*"))
+    assert not 暂存图, "原图应该被删掉"
+
+
+def test_勾了保留原文件才留原图(临时工作区, 站, 假看图):
+    体, 类型 = 多段({"token": 令牌(站), "keep": "1"}, 文件=("截图.png", PNG1像素))
+    状态, 页面, _ = 请求(站, "POST", "/add", 原始=体, 类型=类型)
+    assert 状态 in (200, 303), 页面
+
+    留在media = [f for f in (临时工作区 / "vault" / "media").glob("*.png")]
+    assert 留在media, "勾了保留就该留下原图"
+
+
+def test_传一个txt能吸进正文(临时工作区, 站, 假抽取):
+    内容 = "今天把接口调通了，卡在 state 参数签名。\n调了三个小时。".encode("utf-8")
+    体, 类型 = 多段({"token": 令牌(站)}, 文件=("笔记.txt", 内容))
+    状态, 页面, _ = 请求(站, "POST", "/add", 原始=体, 类型=类型)
+    assert 状态 in (200, 303), 页面
+
+    全文 = list((临时工作区 / "vault" / "media").glob("*.md"))
+    assert 全文 and "state 参数签名" in 全文[0].read_text(encoding="utf-8")
+    assert list((临时工作区 / "vault" / "now").rglob("*.md"))
+
+
+def test_传一个docx能抽出文字(临时工作区, 站, 假抽取):
+    体, 类型 = 多段({"token": 令牌(站)}, 文件=("周报.docx", 造docx("本周完成了检索模块的初版")))
+    状态, 页面, _ = 请求(站, "POST", "/add", 原始=体, 类型=类型)
+    assert 状态 in (200, 303), 页面
+
+    全文 = list((临时工作区 / "vault" / "media").glob("*.md"))
+    assert 全文 and "检索模块" in 全文[0].read_text(encoding="utf-8")
+
+
+def test_不支持的文件类型会明确拒绝(临时工作区, 站, 假抽取):
+    体, 类型 = 多段({"token": 令牌(站)}, 文件=("合同.pdf", b"%PDF-1.4 ..."))
+    状态, 页面, _ = 请求(站, "POST", "/add", 原始=体, 类型=类型)
+    assert 状态 == 400
+    assert "不支持这种文件" in 页面
+    assert not list((临时工作区 / "vault" / "now").rglob("*.md")), "被拒的文件不该产生记录"
+
+
+def test_文件名带路径也越不出去(临时工作区, 站, 假抽取):
+    体, 类型 = 多段({"token": 令牌(站)}, 文件=("../../evil.txt", "外面的内容".encode("utf-8")))
+    状态, _, _ = 请求(站, "POST", "/add", 原始=体, 类型=类型)
+    assert 状态 in (200, 303)
+    # 落盘名一律是自己的 id，不会出现 evil.txt 这种文件
+    越界 = [p for p in (临时工作区).rglob("evil.txt")]
+    assert not 越界
+
+
+def test_名字像图片但内容不是图片会被拒(临时工作区, 站, 假抽取):
+    体, 类型 = 多段({"token": 令牌(站)}, 文件=("假的.png", "这不是图片".encode("utf-8")))
+    状态, 页面, _ = 请求(站, "POST", "/add", 原始=体, 类型=类型)
+    assert 状态 == 400
+    assert "内容不像图片" in 页面
+
+
+def test_太大的文件会被拒(临时工作区, 站):
+    巨大 = b"\x89PNG\r\n\x1a\n" + b"0" * (9 * 1024 * 1024)
+    体, 类型 = 多段({"token": 令牌(站)}, 文件=("大图.png", 巨大))
+    状态, 页面, _ = 请求(站, "POST", "/add", 原始=体, 类型=类型)
+    assert 状态 == 400
+    assert "太大" in 页面

@@ -43,6 +43,9 @@ app = typer.Typer(
 def add(
     文本: str = typer.Argument("", help="要说的话，加引号。比如 life add \"今天调通了 OAuth\""),
     图片: Optional[Path] = typer.Option(None, "--image", help="配一张图片（截图、笔记照片）"),
+    文档: Optional[Path] = typer.Option(
+        None, "--file", help="配一个文件（txt / md / docx），会先在本地抽出文字"
+    ),
     情感: bool = typer.Option(False, "--emotion", help="这条是感受，不是做了什么"),
     私密: bool = typer.Option(
         False, "--private", help="只存本地，绝不发给任何接口（也不会被以后的检索翻出来）"
@@ -50,11 +53,23 @@ def add(
     保留图片: bool = typer.Option(
         False, "--keep-image", help="破例保留原图（设计默认不存原图）"
     ),
+    保留文件: bool = typer.Option(
+        False, "--keep-file", help="破例保留原文件（默认只留抽出来的文字）"
+    ),
     演示: bool = typer.Option(False, "--demo", help="用假模型演示，不联网不花钱"),
 ):
     """记一件事。先把内容写进硬盘，再想办法压缩成一句话。"""
-    if not 文本.strip() and 图片 is None:
-        typer.echo('× 你什么都没输入。\n  用法：life add "今天做了什么"\n        life add --image 图片路径 "说明"')
+    if 图片 is not None and 文档 is not None:
+        typer.echo("× --image 和 --file 一次只能给一个。")
+        raise typer.Exit(1)
+
+    if not 文本.strip() and 图片 is None and 文档 is None:
+        typer.echo(
+            '× 你什么都没输入。\n'
+            '  用法：life add "今天做了什么"\n'
+            '        life add --image 图片路径 "说明"\n'
+            '        life add --file 文档.docx "说明"'
+        )
         raise typer.Exit(1)
 
     if 演示:
@@ -63,6 +78,9 @@ def add(
     结果 = recorder模块.记录一条(
         文本,
         图片=图片,
+        文档=文档,
+        文档原名=文档.name if 文档 is not None else "",
+        保留原文件=保留文件,
         情感=情感,
         私密=私密,
         保留图片=保留图片,

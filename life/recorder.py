@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Callable
 
 from life import config, extract, index, llm, store
+from life import uploads as uploads模块
 
 提示函数 = Callable[[str], None]
 
@@ -26,9 +27,12 @@ def _不说(_: str) -> None:
 
 
 def 记录一条(
-    原文: str,
+    原文: str = "",
     *,
     图片: Path | None = None,
+    文档: Path | None = None,
+    文档原名: str = "",
+    保留原文件: bool = False,
     情感: bool = False,
     私密: bool = False,
     保留图片: bool = False,
@@ -36,6 +40,10 @@ def 记录一条(
     提示: 提示函数 | None = None,
 ) -> dict:
     """记一条。返回结果字典，调用方负责把结果变成屏幕上的一句话。
+
+    图片和文档走同一条链路，区别只在「怎么变成文字」：
+        图片 → 视觉模型一次调用（OCR 全文 + 摘要 + claims）
+        文档 → 本地抽文本（txt / md / docx），再走文本抽取
 
     返回值：
         {
@@ -47,57 +55,87 @@ def 记录一条(
     """
     说 = 提示 or _不说
 
-    if not 原文.strip() and 图片 is None:
+    if not 原文.strip() and 图片 is None and 文档 is None:
         return {"状态": "输入有问题", "路径们": [], "收件": None, "错误": "什么都没有输入。"}
 
     if 图片 is not None and not 图片.exists():
-        return {
-            "状态": "输入有问题",
-            "路径们": [],
-            "收件": None,
-            "错误": f"找不到这张图：{图片}",
-        }
+        return {"状态": "输入有问题", "路径们": [], "收件": None, "错误": f"找不到这张图：{图片}"}
+
+    if 文档 is not None and not 文档.exists():
+        return {"状态": "输入有问题", "路径们": [], "收件": None, "错误": f"找不到这个文件：{文档}"}
 
     vault = store.确保vault就绪()
     此刻 = store.现在()
     输入id, _ = store.分配id(此刻)
 
-    # ① 图片先复制进 vault（C1：文件必须在仓库内；用户可能马上删掉原图）
-    暂存图: Path | None = None
-    if 图片 is not None:
+    # ① 文件先复制进 vault（C1：必须在仓库内；也保证原始文件被删掉也不影响）
+    暂存: Path | None = None
+    if 图片 is not None or 文档 is not None:
+        来源文件 = 图片 if 图片 is not None else 文档
         try:
-            暂存图 = store.复制图片到暂存(图片, 输入id)
+            暂存 = store.复制图片到暂存(来源文件, 输入id)
         except OSError as 错误:
             return {
                 "状态": "输入有问题",
                 "路径们": [],
                 "收件": None,
-                "错误": f"复制图片失败：{错误}",
+                "错误": f"复制文件失败：{错误}",
             }
 
-    # ② 算指纹，看是不是重复提交（§4.1 幂等）
-    指纹 = store.内容哈希(原文, 暂存图)
+    # ② 文档：立刻把全文抽出来存好（原文件之后可能被删，这段全文是它唯一的话）
+    全文 = ""
+    if 文档 is not None and 暂存 is not None:
+        try:
+            全文 = uploads模块.抽文本(暂存)
+        except uploads模块.上传错误 as 错误:
+            暂存.unlink(missing_ok=True)
+            return {"状态": "输入有问题", "路径们": [], "收件": None, "错误": str(错误)}
+
+        if not 全文.strip():
+            暂存.unlink(missing_ok=True)
+            return {
+                "状态": "输入有问题",
+                "路径们": [],
+                "收件": None,
+                "错误": "这个文件里没读到文字（可能是扫描件或空文档）。",
+            }
+
+        _存全文(vault, 输入id, 文档原名 or 暂存.name, 全文)
+        说(f"· 已从文件里抽出 {len(全文)} 个字，存在 vault/media/{输入id}.md")
+
+        if not 原文.strip():
+            原文 = uploads模块.送模型的片段(全文)
+
+    # ③ 算指纹，看是不是重复提交（§4.1 幂等）
+    指纹 = store.内容哈希(原文, 暂存)
     已有 = extract.读缓存(指纹)
-    if 已有 and any((vault / 相对) .exists() for 相对 in 已有.get("entry_paths", [])):
-        if 暂存图 is not None:
-            暂存图.unlink(missing_ok=True)
+    if 已有 and any((vault / 相对).exists() for 相对 in 已有.get("entry_paths", [])):
+        if 暂存 is not None:
+            暂存.unlink(missing_ok=True)
         说("· 这条之前已经记过了，不重复存：")
         for 相对 in 已有.get("entry_paths", []):
             说(f"    vault/{相对}")
         return {"状态": "重复", "路径们": [], "收件": None, "错误": ""}
 
-    # ③ 先落盘（C5）。这一行执行完，这条内容就不会丢了。
+    # ④ 先落盘（C5）。这一行执行完，这条内容就不会丢了。
+    if 图片 is not None:
+        种类 = "image"
+    elif 文档 is not None:
+        种类 = "document"
+    else:
+        种类 = "text"
+
     输入 = {
         "格式": 1,
         "id": 输入id,
         "ts": store.时间文本(此刻),
-        "kind": "image" if 暂存图 else "text",
+        "kind": 种类,
         "原文": 原文,
         "部分": "emotion" if 情感 else "record",
         "private": 私密,
-        "keep_image": 保留图片,
-        "图片": str(暂存图.relative_to(vault)).replace("\\", "/") if 暂存图 else "",
-        "图片原名": 图片.name if 图片 else "",
+        "keep_image": 保留图片 or 保留原文件,
+        "图片": str(暂存.relative_to(vault)).replace("\\", "/") if 暂存 else "",
+        "图片原名": 图片.name if 图片 is not None else 文档原名,
         "内容指纹": 指纹,
         "尝试次数": 0,
         "最后错误": "",
@@ -105,7 +143,7 @@ def 记录一条(
     收件路径 = store.写inbox(输入)
     说(f"· 已存好：vault/inbox/{收件路径.name}")
 
-    # ④ 抽取（失败也不影响上面那条已经存好的记录）
+    # ⑤ 抽取（失败也不影响上面那条已经存好的记录）
     try:
         路径们, 结果 = 抽取并保存(输入, 用假模型=用假模型, 提示=说)
     except llm.网络错误 as 错误:
@@ -115,15 +153,26 @@ def 记录一条(
     except (llm.模型错误, extract.抽取错误, index.索引错误) as 错误:
         return {"状态": "抽取失败", "路径们": [], "收件": 收件路径, "错误": str(错误)}
 
-    # ⑤ 收尾：清掉待抽取文件、处理图片、写缓存
+    # ⑥ 收尾：清掉待抽取文件、处理文件、写缓存
     store.删inbox(收件路径)
-    处理图片(输入, vault, 暂存图, 结果, 提示=说)
+    处理文件(输入, vault, 暂存, 结果, 提示=说)
     extract.写缓存(指纹, 结果, 路径们)
 
     for 路径 in 路径们:
         说(f"√ 记下了：vault/{str(路径.relative_to(vault)).replace(chr(92), '/')}")
 
     return {"状态": "成功", "路径们": 路径们, "收件": 收件路径, "错误": ""}
+
+
+def _存全文(vault: Path, 输入id: str, 原名: str, 全文: str) -> None:
+    """文档抽出来的全文，存成 markdown。原文件删掉之后，这是它唯一的「原话」。"""
+    正文 = (
+        f"# 文件全文\n\n"
+        f"来源：{原名}\n\n"
+        f"---\n\n"
+        f"{全文}\n"
+    )
+    (vault / "media" / f"{输入id}.md").write_text(正文, encoding="utf-8")
 
 
 def 抽取并保存(
@@ -173,31 +222,35 @@ def 抽取并保存(
         连接.close()
 
 
-def 处理图片(
+def 处理文件(
     输入: dict,
     vault: Path,
-    暂存图: Path | None,
+    暂存: Path | None,
     结果: dict,
     *,
     提示: 提示函数 | None = None,
 ) -> None:
-    """按设计处理图片：OCR 全文留下，原图删掉（除非用户说了 --keep-image）。"""
+    """按设计处理上传的文件：全文留下，原文件删掉（除非用户勾了「保留原文件」）。
+
+    图片的全文 = OCR 结果；文档的全文在抽取前就已经写好了（见 _存全文）。
+    """
     说 = 提示 or _不说
-    if 暂存图 is None:
+    if 暂存 is None:
         return
 
     if 输入.get("kind") == "image":
         正文 = (
-            f"# 图片原文（OCR）\n\n"
+            "# 图片原文（OCR）\n\n"
             f"{结果.get('ocr_text') or '（没有识别出文字）'}\n\n"
             f"# 摘要\n\n{结果.get('digest') or '（没有摘要）'}\n"
         )
         (vault / "media" / f"{输入['id']}.md").write_text(正文, encoding="utf-8")
 
-    if 输入.get("keep_image"):
-        目标 = vault / "media" / 暂存图.name
+    if 输入.get("keep_image") or 输入.get("keep_file"):
+        # 保留时的文件名用记录 id，不用上传时的原名（原名不可信，也容易重名）
+        目标 = vault / "media" / f"{输入['id']}{暂存.suffix}"
         目标.parent.mkdir(parents=True, exist_ok=True)
-        暂存图.replace(目标)
-        说(f"· 原图按你的要求留下了：vault/media/{目标.name}")
+        暂存.replace(目标)
+        说(f"· 原文件按你的要求留下了：vault/media/{目标.name}")
     else:
-        暂存图.unlink(missing_ok=True)
+        暂存.unlink(missing_ok=True)
