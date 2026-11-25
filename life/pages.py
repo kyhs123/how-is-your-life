@@ -95,6 +95,10 @@ def 今天(
   <h2>记一条</h2>
   <form method="post" action="/add" enctype="multipart/form-data">
     <input type="hidden" name="token" value="{e(令牌)}">
+    <label class="when">什么时候
+      <input name="when" maxlength="24"
+        placeholder="不填就是现在；以前的事可以写 2023 / 2023-09 / 大一">
+    </label>
     <label class="sr" for="text">今天做了什么</label>
     <textarea id="text" name="text" rows="3" maxlength="2000"
       placeholder="今天做了什么？带上具体细节最好，比如：&#10;把 OAuth 调通了，卡在 state 参数签名，调了 4 小时&#10;&#10;只传文件、不写字也可以。"></textarea>
@@ -110,7 +114,7 @@ def 今天(
       <label><input type="checkbox" name="keep" value="1"> 保留原文件（默认只留文字）</label>
     </p>
     <p class="actions"><button type="submit">记下来</button>
-      <span class="hint">先落盘，再压缩成一句话。断网也不会丢。</span></p>
+      <span class="hint">过去的、记得的、记不清哪天的，都能记。</span></p>
   </form>
   <p class="hint">图片会读一遍（OCR 全文留下，原图删掉）；文档会先在本地抽出文字，再压成一句话。</p>
 </section>"""
@@ -127,7 +131,7 @@ def 今天(
         for 条目 in 最近:
             块.append(
                 f'<li><a href="/entries/{q(条目["id"])}">'
-                f'<span class="when">{e(条目["ts"][5:16].replace("T", " "))}</span>'
+                f'<span class="when">{e(条目.get("when") or 条目["ts"][5:16].replace("T", " "))}</span>'
                 f'<span class="badge l{条目["level"]}">{档位名.get(条目["level"], "?")}</span>'
                 f'{"<span class=\"badge priv\">私密</span>" if 条目["private"] else ""}'
                 f'<span class="did">{e(条目["did"])}</span></a></li>'
@@ -186,7 +190,7 @@ def 记录列表(
         for 条目 in 条目们:
             块.append(
                 f'<li><a href="/entries/{q(条目["id"])}">'
-                f'<span class="when">{e(条目["ts"][5:16].replace("T", " "))}</span>'
+                f'<span class="when">{e(条目.get("when") or 条目["ts"][5:16].replace("T", " "))}</span>'
                 f'<span class="badge l{条目["level"]}">{档位名.get(条目["level"], "?")}</span>'
                 f'{"<span class=\"badge priv\">私密</span>" if 条目["private"] else ""}'
                 f'{"<span class=\"badge review\">待确认</span>" if 条目["status"] == "needs_review" else ""}'
@@ -231,7 +235,7 @@ def 单条(令牌: str, 条目: dict, *, 错误: str = "", 草稿: dict | None =
 
     块.append(
         f"""<article class="card">
-  <p class="when">{e(条目["ts"][:16].replace("T", " "))}
+  <p class="when">{e(条目.get("when") or 条目["ts"][:16].replace("T", " "))}
      <span class="badge l{条目["level"]}">{档位名.get(条目["level"], "?")}</span>
      <span class="badge plain">{e(部分名.get(条目["part"], 条目["part"]))}</span>
      <span class="badge plain">{e(状态名.get(条目["status"], 条目["status"]))}</span>
@@ -688,6 +692,8 @@ textarea{resize:vertical;min-height:72px}
 input:focus-visible,textarea:focus-visible,select:focus-visible,button:focus-visible,
 a:focus-visible{outline:2px solid var(--点);outline-offset:2px}
 form label{display:block;margin:0 0 12px;font-size:13px;color:var(--淡)}
+.when{display:block;font-size:13px;color:var(--淡);margin:0 0 12px}
+.when input{margin-top:5px}
 .checks{display:flex;flex-wrap:wrap;gap:16px;margin:10px 0 6px}
 .checks label{display:flex;align-items:center;gap:6px;margin:0;font-size:13px;color:var(--淡)}
 .checks input{width:auto;margin:0}

@@ -508,6 +508,15 @@ class 处理器(BaseHTTPRequestHandler):
             self._今天("什么都没写，也没选文件。再试一次？", 状态=HTTPStatus.BAD_REQUEST)
             return
 
+        try:
+            某天, 时间说明 = recorder.解析过去时间(表单.get("when", ""))
+        except ValueError as 错误:
+            self._今天(str(错误), 状态=HTTPStatus.BAD_REQUEST)
+            return
+        时间备注 = ""
+        if 表单.get("when", "").strip():
+            时间备注 = "\n" + 时间说明
+
         临时: Path | None = None
         try:
             if 文件们:
@@ -526,6 +535,7 @@ class 处理器(BaseHTTPRequestHandler):
                     文档=临时 if 类型 == "document" else None,
                     文档原名=文件["文件名"],
                     保留原文件=保留原文件,
+                    时间=表单.get("when", ""),
                     情感=表单.get("emotion") == "1",
                     私密=表单.get("private") == "1",
                     提示=lambda _: None,
@@ -533,6 +543,7 @@ class 处理器(BaseHTTPRequestHandler):
             else:
                 结果 = recorder.记录一条(
                     原文,
+                    时间=表单.get("when", ""),
                     情感=表单.get("emotion") == "1",
                     私密=表单.get("private") == "1",
                     提示=lambda _: None,
@@ -553,7 +564,10 @@ class 处理器(BaseHTTPRequestHandler):
         elif 结果["状态"] == "重复":
             self._今天("这条之前记过了，没重复存。")
         else:
-            self._跳("/")
+            if 时间备注:
+                self._今天(时间备注.strip(), 状态=HTTPStatus.OK)
+            else:
+                self._跳("/")
 
     def _存上传(self, 数据: bytes, 后缀: str) -> Path:
         """把上传的东西写进 vault 的暂存目录。文件名一律自己取，不用用户给的名字。"""

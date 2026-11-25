@@ -46,6 +46,11 @@ def add(
     文档: Optional[Path] = typer.Option(
         None, "--file", help="配一个文件（txt / md / docx），会先在本地抽出文字"
     ),
+    什么时候: str = typer.Option(
+        "",
+        "--when",
+        help="这是什么时候的事：不填就是现在；也可以写 2023 / 2023-09 / 大一",
+    ),
     情感: bool = typer.Option(False, "--emotion", help="这条是感受，不是做了什么"),
     私密: bool = typer.Option(
         False, "--private", help="只存本地，绝不发给任何接口（也不会被以后的检索翻出来）"
@@ -81,6 +86,7 @@ def add(
         文档=文档,
         文档原名=文档.name if 文档 is not None else "",
         保留原文件=保留文件,
+        时间=什么时候,
         情感=情感,
         私密=私密,
         保留图片=保留图片,
@@ -88,6 +94,11 @@ def add(
         提示=typer.echo,
     )
 
+    _报告记录结果(结果)
+
+
+def _报告记录结果(结果: dict) -> None:
+    """把 recorder 返回的状态变成屏幕上的一句话（add / import 共用）。"""
     状态 = 结果["状态"]
     if 状态 == "输入有问题":
         typer.echo(f"× {结果['错误']}")
@@ -372,13 +383,16 @@ def goal_stop(
 def settle(
     周: bool = typer.Option(False, "--week", help="按最近 7 天归纳（默认就是这个）"),
     天数: int = typer.Option(7, "--days", help="看最近几天的记录"),
+    从: Optional[str] = typer.Option(
+        None, "--since", help="从哪个月/哪一天起看（补看补记进来的历史，比如 2023-01）"
+    ),
 ):
     """把最近这一段的记录归纳成主题，够条件的写成「晋升提名」。
 
     注意：这一步只提名，不动你的记录。要不要晋升，用 `life promote` 一条条决定。
     """
     try:
-        结果 = promote模块.提名(天数=天数)
+        结果 = promote模块.提名(天数=天数, since=从)
     except promote模块.晋升错误 as 错误:
         typer.echo(f"× {错误}")
         raise typer.Exit(1) from 错误

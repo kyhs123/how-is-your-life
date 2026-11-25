@@ -195,3 +195,44 @@ def test_vault里有真实记录时demo会拒绝(临时工作区):
     assert 结果.exit_code == 1
     assert "已经有 1 条记录" in 结果.output
     assert "--force" in 结果.output
+
+
+# ── 补记过去的人生（不是单独的模块，只是「记一条」多一个字段）──
+
+
+def test_补记过去的事会落在那个月(临时工作区):
+    结果 = 运行.invoke(
+        cli.app,
+        ["add", "大一做了个图书管理系统，Java Swing + MySQL，答辩被问索引", "--when", "2023-09", "--demo"],
+    )
+    assert 结果.exit_code == 0, 结果.output
+
+    文件 = list((临时工作区 / "vault" / "now" / "2023-09").glob("*.md"))
+    assert 文件, "应该落在 2023-09 这个月目录里"
+    条目 = store.读条目(文件[0])
+    assert 条目["when"] == "2023-09"
+    assert 条目["ts"].startswith("2023-09-01")
+
+
+def test_只记得大几也能记(临时工作区):
+    """用户的原话：不需要知道具体日期，知道你做过这个就行。"""
+    结果 = 运行.invoke(cli.app, ["add", "大一做的图书管理系统", "--when", "大一", "--demo"])
+    assert 结果.exit_code == 0, 结果.output
+
+    条目 = store.读条目(next((临时工作区 / "vault" / "now").rglob("*.md")))
+    assert 条目["when"] == "大一", "原话要留下"
+    assert 条目["ts"].startswith(store.现在().date().isoformat()[:7]), "认不出日期就按录入时间存"
+
+
+def test_不填时间就是现在(临时工作区):
+    结果 = 运行.invoke(cli.app, ["add", "今天读了两章文档", "--demo"])
+    assert 结果.exit_code == 0
+
+    条目 = store.读条目(next((临时工作区 / "vault" / "now").rglob("*.md")))
+    assert 条目["when"] == ""
+
+
+def test_不能补记未来的事(临时工作区):
+    结果 = 运行.invoke(cli.app, ["add", "还没发生的事", "--when", "2099-01", "--demo"])
+    assert 结果.exit_code == 1
+    assert "未来" in 结果.output
