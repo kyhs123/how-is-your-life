@@ -23,7 +23,9 @@ from life import config, extract, index, llm, retrieve, store
 from life import ask as ask模块
 from life import board as board模块
 from life import goal as goal模块
+from life import portrait as portrait模块
 from life import promote as promote模块
+from life import review as review模块
 
 app = typer.Typer(
     add_completion=False,
@@ -476,6 +478,100 @@ def promote(
 
     typer.echo("")
     typer.echo(f"· 完成：晋升 {晋升了} 条，拒绝 {拒绝了} 条。记录都在 vault/changelog.md 里。")
+
+
+# ── life portrait / life review（画像与回顾，第 4 周）───────────
+
+
+@app.command()
+def portrait(
+    只看变化: bool = typer.Option(False, "--diff", help="只看和上季度的变化"),
+):
+    """生成（或更新）本季度的画像。写的是假设，不是判决。"""
+    if 只看变化:
+        try:
+            typer.echo(portrait模块.只看变化())
+        except portrait模块.画像错误 as 错误:
+            typer.echo(f"× {错误}")
+            raise typer.Exit(1) from 错误
+        return
+
+    try:
+        结果 = portrait模块.生成()
+    except portrait模块.画像错误 as 错误:
+        typer.echo(f"× {错误}")
+        raise typer.Exit(1) from 错误
+
+    typer.echo(f"√ {结果['季度']} 画像已生成：{结果['路径']}")
+    typer.echo(f"  本次 {结果['token']} token")
+
+    if 结果["缺依据的假设"]:
+        typer.echo("")
+        typer.echo(f"· 有 {len(结果['缺依据的假设'])} 条假设没写依据（模型在说场面话）：")
+        for 一条 in 结果["缺依据的假设"]:
+            typer.echo(f"    - {一条}")
+        typer.echo("  （这些不是数据推出来的，信之前先怀疑一下。）")
+
+
+@app.command()
+def review(
+    周: bool = typer.Option(False, "--week", help="回顾最近 7 天（默认）"),
+    季度: bool = typer.Option(False, "--quarter", help="回顾本季度"),
+    用html: bool = typer.Option(False, "--html", help="输出单文件 HTML，双击可看"),
+    输出: Optional[Path] = typer.Option(None, "--out", help="写到文件（不写就打印到屏幕）"),
+):
+    """回顾一段时间：做了什么、证据分布变化、情绪、晋升、一个建议。"""
+    try:
+        文本, 数据 = review模块.生成(周=not 季度, 季度=季度, 用HTML=用html)
+    except review模块.回顾错误 as 错误:
+        typer.echo(f"× {错误}")
+        raise typer.Exit(1) from 错误
+
+    if 输出 is not None:
+        输出.parent.mkdir(parents=True, exist_ok=True)
+        输出.write_text(文本, encoding="utf-8")
+        typer.echo(f"√ 回顾已写入：{输出}")
+        if 用html:
+            typer.echo("  双击这个文件就能用浏览器打开。")
+    else:
+        typer.echo(文本)
+
+
+@app.command()
+def demo(
+    覆盖: bool = typer.Option(False, "--force", help="vault 里已经有记录也强行灌入"),
+):
+    """把 data.example/ 里的虚构数据灌进 vault，用来试功能（别往里写真的）。"""
+    源 = config.示例数据目录()
+    if not 源.exists():
+        typer.echo(f"× 找不到示例数据：{源}")
+        raise typer.Exit(1)
+
+    目标 = store.确保vault就绪()
+    已有 = list((目标 / "now").rglob("*.md"))
+    if 已有 and not 覆盖:
+        typer.echo(f"× vault 里已经有 {len(已有)} 条记录了——那是你自己的数据。")
+        typer.echo("  示例数据会混进去，所以我不动手。三个选择：")
+        typer.echo("    1. 换个地方试：设 LIFE_HOME 指到别的目录再跑（推荐）")
+        typer.echo("    2. 确实想混进来：加 --force")
+        typer.echo("    3. 不用示例数据，直接记你自己的")
+        raise typer.Exit(1)
+
+    份数 = 0
+    for 文件 in sorted(源.rglob("*")):
+        if not 文件.is_file() or 文件.name == "README.md":
+            continue
+        相对路径 = 文件.relative_to(源)
+        (目标 / 相对路径).parent.mkdir(parents=True, exist_ok=True)
+        (目标 / 相对路径).write_text(文件.read_text(encoding="utf-8"), encoding="utf-8")
+        份数 += 1
+
+    结果 = index.重建索引()
+    typer.echo(f"√ 灌入 {份数} 个文件，索引进 {结果['成功']} 条记录、{结果['章节']} 个章节、{结果['目标']} 个目标。")
+    typer.echo("· 这些是虚构数据（一个编程学习者半年的记录），不是你的。")
+    typer.echo("  试试：life ask \"我好累，感觉什么都没做成\"")
+    typer.echo("        life goal show 1")
+    typer.echo("        life board --open")
 
 
 # ── life reindex ──────────────────────────────────────────────
