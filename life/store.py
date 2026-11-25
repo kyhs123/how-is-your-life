@@ -335,6 +335,7 @@ def 改条目字段(
     level: int | None = None,
     outcome: str | None = None,
     status: str | None = None,
+    when: str | None = None,
 ) -> dict:
     """改一条记录的四个字段（网页「单条」页面用的）。
 
@@ -371,6 +372,10 @@ def 改条目字段(
         if status not in 状态取值:
             raise 存储错误(f"状态只能是 {list(状态取值)}。")
         条目["status"] = status
+
+    if when is not None:
+        # 只改人话时间；时间戳（ts）不动 —— 改 ts 会让文件和目录对不上
+        条目["when"] = when.strip()[:40]
 
     写条目(条目)
     return 条目

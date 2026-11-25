@@ -590,6 +590,7 @@ class 处理器(BaseHTTPRequestHandler):
                 level=level,
                 outcome=表单.get("outcome") or None,
                 status=表单.get("status") or None,
+                when=表单.get("when"),
             )
         except store.存储错误 as 错误:
             self._单条(
@@ -600,6 +601,7 @@ class 处理器(BaseHTTPRequestHandler):
                     "level": level,
                     "outcome": 表单.get("outcome", ""),
                     "status": 表单.get("status", ""),
+                    "when": 表单.get("when", ""),
                 },
             )
             return

@@ -99,9 +99,12 @@ def 今天(
       <input name="when" maxlength="24"
         placeholder="不填就是现在；以前的事可以写 2023 / 2023-09 / 大一">
     </label>
-    <label class="sr" for="text">今天做了什么</label>
-    <textarea id="text" name="text" rows="3" maxlength="2000"
-      placeholder="今天做了什么？带上具体细节最好，比如：&#10;把 OAuth 调通了，卡在 state 参数签名，调了 4 小时&#10;&#10;只传文件、不写字也可以。"></textarea>
+    <label class="sr" for="text">做了什么</label>
+    <textarea id="text" name="text" rows="4" maxlength="4000"
+      placeholder="做了什么？带上具体细节最好，比如：&#10;把 OAuth 调通了，卡在 state 参数签名，调了 4 小时&#10;&#10;以前做过的项目也写这里，比如：&#10;大一做了个图书管理系统，Java Swing + MySQL，借阅功能第一次自己写 SQL 关联查询&#10;&#10;只传文件、不写字也可以。"></textarea>
+    <p class="hint 写什么">写以前的项目也行——把 <b>做了什么、用了什么、卡在哪、怎么解决的</b> 写清楚。
+      它会压成一条「你会这个」的证据，将来写简历时能直接拿出来。日期记不清就不要填上面的「什么时候」，
+      或者写「大一」。</p>
     <p class="file">
       <label for="file">或者传个文件（只传文件不写字也行）</label>
       <input type="file" id="file" name="file"
@@ -271,6 +274,9 @@ def 单条(令牌: str, 条目: dict, *, 错误: str = "", 草稿: dict | None =
     <input type="hidden" name="token" value="{e(令牌)}">
     <label>那句话（≤60 字）
       <input name="did" value="{e(草['did'])}" maxlength="80" required>
+    </label>
+    <label>什么时候（人话就行，比如 大一 / 2023-09；留空=不详）
+      <input name="when" value="{e(草.get('when', ''))}" maxlength="40">
     </label>
     <label>档位 <select name="level">{档位选项}</select></label>
     <label>结果 <select name="outcome">{结果选项}</select></label>
@@ -692,6 +698,9 @@ textarea{resize:vertical;min-height:72px}
 input:focus-visible,textarea:focus-visible,select:focus-visible,button:focus-visible,
 a:focus-visible{outline:2px solid var(--点);outline-offset:2px}
 form label{display:block;margin:0 0 12px;font-size:13px;color:var(--淡)}
+.hint.写什么{background:color-mix(in srgb,var(--点) 8%,transparent);border-left:2px solid var(--点);
+  padding:8px 12px;border-radius:0 6px 6px 0;margin:10px 0 0;line-height:1.6}
+.hint.写什么 b{color:var(--墨);font-weight:600}
 .when{display:block;font-size:13px;color:var(--淡);margin:0 0 12px}
 .when input{margin-top:5px}
 .checks{display:flex;flex-wrap:wrap;gap:16px;margin:10px 0 6px}
