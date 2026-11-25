@@ -302,6 +302,7 @@ class 处理器(BaseHTTPRequestHandler):
                 最近=_最近几天(7)[:12],
                 统计=_统计(),
                 提示=提示,
+                待抽取数=len(store.列出inbox()),
             ),
         )
 
@@ -458,6 +459,7 @@ class 处理器(BaseHTTPRequestHandler):
             "review": ("生成带叙述的回顾", self._作业回顾, "/review"),
             "settle": ("归纳最近的记录", self._作业提名, "/chapters"),
             "reindex": ("重建索引", self._作业索引, "/settings"),
+            "retry": ("补抽没抽成的记录", self._作业补抽, "/"),
         }
         项 = 表.get(动作)
         if 项 is None:
@@ -487,6 +489,12 @@ class 处理器(BaseHTTPRequestHandler):
         if 结果["说明"]:
             return 结果["说明"]
         return f"找到 {结果['主题数']} 个主题，提名 {len(结果['提名'])} 条"
+
+    def _作业补抽(self) -> str:
+        结果 = recorder.补抽()
+        if 结果["总数"] == 0:
+            return "队列是空的，没有要补的。"
+        return f"补抽 {结果['成功']} 条，仍失败 {结果['失败']} 条"
 
     def _作业索引(self) -> str:
         结果 = index.重建索引()

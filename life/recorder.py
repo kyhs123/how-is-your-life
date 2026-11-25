@@ -353,3 +353,46 @@ def 解析过去日期(文本: str) -> tuple[date, str]:
     if 某天 is None:
         raise ValueError(说明)
     return 某天, 说明
+
+
+def 补抽(提示: 提示函数 | None = None) -> dict:
+    """把 inbox 里没抽成的再跑一遍（`life retry` 和网页上的「补抽」按钮共用）。"""
+    说 = 提示 or _不说
+    vault = store.确保vault就绪()
+    文件们 = store.列出inbox()
+    成功 = 0
+    失败 = 0
+    错误们: list[str] = []
+
+    for 路径 in 文件们:
+        try:
+            输入 = store.读inbox(路径)
+        except store.存储错误 as 错误:
+            说(f"× {错误}")
+            失败 += 1
+            continue
+
+        暂存 = vault / 输入["图片"] if 输入.get("图片") else None
+        if 暂存 is not None and not 暂存.exists():
+            暂存 = None
+        图片参数 = 暂存 if 输入.get("kind") == "image" else None
+
+        try:
+            路径们, 结果 = 抽取并保存(输入, 用假模型=False, 图片=图片参数, 提示=说)
+        except (llm.模型错误, extract.抽取错误, index.索引错误, config.配置错误) as 错误:
+            说(f"× {路径.name} 还是不行：{错误}")
+            错误们.append(str(错误))
+            失败 += 1
+            continue
+
+        store.删inbox(路径)
+        try:
+            处理文件(输入, vault, 暂存, 结果, 提示=说)
+        except Exception as 错误:  # noqa: BLE001 —— 收尾失败不算整体失败
+            说(f"· 收尾时出了点问题（记录本身已经存好）：{错误}")
+        extract.写缓存(输入.get("内容指纹", ""), 结果, 路径们)
+        for 一条 in 路径们:
+            说(f"√ 记下了：vault/{str(一条.relative_to(vault)).replace(chr(92), '/')}")
+        成功 += 1
+
+    return {"成功": 成功, "失败": 失败, "错误": 错误们[:3], "总数": len(文件们)}

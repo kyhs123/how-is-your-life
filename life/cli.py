@@ -124,46 +124,16 @@ def _报告记录结果(结果: dict) -> None:
 @app.command()
 def retry(演示: bool = typer.Option(False, "--demo", help="用假模型演示，不联网不花钱")):
     """把 vault/inbox/ 里还没抽成功的输入，再抽一遍。"""
-    vault = store.确保vault就绪()
-    文件们 = store.列出inbox()
-    if not 文件们:
+    if 演示:
+        typer.echo("· --demo 只影响新记录；补抽总是走真模型。")
+
+    store.确保vault就绪()
+    if not store.列出inbox():
         typer.echo("· 待抽取队列是空的，没有要补的。")
         return
 
-    typer.echo(f"· 有 {len(文件们)} 条等着抽取。")
-    成功 = 0
-    失败 = 0
-    for 路径 in 文件们:
-        try:
-            输入 = store.读inbox(路径)
-        except store.存储错误 as 错误:
-            typer.echo(f"× {错误}")
-            失败 += 1
-            continue
-
-        暂存图 = vault / 输入["图片"] if 输入.get("图片") else None
-        if 暂存图 is not None and not 暂存图.exists():
-            暂存图 = None  # 文件已经被清掉了，按纯文字重试
-        # 只有图片才走视觉通道；文档的文字在第一次就抽好存在原文里了
-        图片参数 = 暂存图 if 输入.get("kind") == "image" else None
-
-        try:
-            路径们, 结果 = recorder模块.抽取并保存(
-                输入, 用假模型=演示, 图片=图片参数, 提示=typer.echo
-            )
-        except (llm.模型错误, extract.抽取错误, index.索引错误, config.配置错误) as 错误:
-            typer.echo(f"× {路径.name} 还是不行：{错误}")
-            失败 += 1
-            continue
-
-        store.删inbox(路径)
-        recorder模块.处理文件(输入, vault, 暂存图, 结果, 提示=typer.echo)
-        extract.写缓存(输入.get("内容指纹", ""), 结果, 路径们)
-        for 一条 in 路径们:
-            typer.echo(f"√ 记下了：vault/{str(一条.relative_to(vault)).replace(chr(92), '/')}")
-        成功 += 1
-
-    typer.echo(f"· 完成：补抽 {成功} 条，仍失败 {失败} 条。")
+    结果 = recorder模块.补抽(提示=typer.echo)
+    typer.echo(f"· 完成：补抽 {结果['成功']} 条，仍失败 {结果['失败']} 条。")
 
 
 # ── life ask ──────────────────────────────────────────────────
