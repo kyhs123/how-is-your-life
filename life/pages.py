@@ -346,6 +346,7 @@ def 提问(
     诊断: dict | None = None,
     错误: str = "",
     只看召回: bool = False,
+    没做到: list[str] | None = None,
 ) -> str:
     块 = ['<section><h2>提问 <small>（带着你的旧记录回答）</small></h2>']
     块.append(
@@ -363,6 +364,14 @@ def 提问(
 
     if 回答:
         块.append(f'<article class="card answer"><p>{e(回答).replace(chr(10), "<br>")}</p></article>')
+
+    # 这句是「我这边没达标」的提示，属于系统消息，**不能混进回答正文**（踩过）
+    if 没做到:
+        块.append(
+            '<p class="error">这次回答有几条硬要求没做到（已经重试过一次，不是你的错）：<br>'
+            + "<br>".join(f"· {e(一条)}" for 一条 in 没做到)
+            + "</p>"
+        )
 
     if 诊断 is not None:
         各路 = 诊断.get("各路", {})
