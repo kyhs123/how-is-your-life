@@ -18,7 +18,7 @@
 | 2 | 三路检索 + `life ask`（**项目的验证点**：它能不能提起你忘掉的事） | ✅ |
 | 3 | 目标 + 证据视图 + 固化（`settle`）+ 晋升（`promote`） | ✅ |
 | 4 | 画像 + 回顾（含单文件 HTML）+ 示例数据 | ✅ |
-| 5 | 可编辑的网页界面（life server） | ✅ |
+| 5 | 可编辑的本机网页界面（`life server`：记一条 / 翻记录 / 提问 / 目标 / 章节 / 画像 / 回顾） | ✅ |
 
 ---
 
@@ -45,8 +45,9 @@
 # 季度回顾，单文件 HTML
 .\.venv\Scripts\life.exe review --quarter --html --out 回顾.html
 
-# 可编辑的本机网页（改目标、确认待确认的记录）
+# 主界面：浏览器里记一条、翻记录、提问、管目标
 .\.venv\Scripts\life.exe server --open
+# → http://127.0.0.1:8770/
 ```
 
 `life ask` 的输出长这样（真跑出来的）：
@@ -54,6 +55,26 @@
 > 累是真的。但「什么都没做成」这个结论我不认——2026-11-22 你跑了 5 公里，配速 6 分，比上个月还快了一点，这不是没做成。2026-09-26 你也说过「我是不是就这样了」，那次记录里只有崩溃；这次往前翻，至少还有一条往上走的。要不要今晚只把跑步那条备注成「比上个月快」，别的先不动？不想弄就睡。
 
 ---
+
+## 网页界面（主界面）
+
+```powershell
+.\.venv\Scripts\life.exe server --open      # 打开 http://127.0.0.1:8770/
+```
+
+| 页面 | 能做什么 |
+|---|---|
+| 今天 | 写一句话记下来（可标「感受」「只存本地」）+ 最近七天 |
+| 记录 | 翻全部记录，按类型/档位筛选，按月分组 |
+| 单条 | 看全部字段，改那句话 / 档位 / 结果 / 状态 |
+| 提问 | 输一句话，它翻出旧记录并回答（也可以只看翻到了什么） |
+| 目标 | 立目标、改目标、看证据卡 |
+| 章节 | 晋升出来的主线 |
+| 画像 · 回顾 | 只读展示 + 给出重新生成的命令 |
+| 设置 | 数据目录、模型、条数、token |
+
+只绑 `127.0.0.1`：局域网里的手机和别的电脑连不上；不起外网服务、不引前端框架、无外部资源。
+能改什么、不能改什么，见施工图 [docs/WEBUI.md](docs/WEBUI.md)。
 
 ## 安装（三步）
 
@@ -92,7 +113,7 @@ copy .env.example .env                       # 填 CHAT_API_KEY
 | `life portrait [--diff]` | 季度画像（写假设，不写判决） |
 | `life review [--week\|--quarter] [--html]` | 回顾 |
 | `life demo` | 灌入虚构示例数据 |
-| `life server` | 本机网页界面：改目标、确认待确认的记录（只绑 127.0.0.1） |
+| `life server` | 本机网页界面（主界面）：记一条、翻记录、提问、管目标（只绑 127.0.0.1） |
 | `life reindex [--vectors]` | 从 markdown 重建索引 |
 
 ---
@@ -113,7 +134,7 @@ copy .env.example .env                       # 填 CHAT_API_KEY
 | 回顾 | [回顾.md](docs/features/回顾.md) | `life/review.py`、`life/prompts/review.md` |
 | 看板 | [看板.md](docs/features/看板.md) | `life/board.py` |
 | 示例数据 | [示例数据.md](docs/features/示例数据.md) | `life/cli.py`、`data.example/` |
-| 网页编辑 | [网页编辑.md](docs/features/网页编辑.md) | `life/server.py` |
+| 网页界面 | [网页编辑.md](docs/features/网页编辑.md)（施工图：[WEBUI.md](docs/WEBUI.md)） | `life/server.py`、`life/pages.py` |
 | 假模型 | [假模型.md](docs/features/假模型.md) | `life/fake_model.py` |
 
 完整索引见 [docs/features/README.md](docs/features/README.md)。设计文档：[docs/DESIGN.md](docs/DESIGN.md)。拍过的决定：[docs/决策记录.md](docs/决策记录.md)。
@@ -161,6 +182,9 @@ life/           程序本体
   portrait.py   季度画像
   review.py     回顾（含 HTML）
   board.py      只读看板
+  server.py     本机网页界面（路由 + 安全）
+  pages.py      网页的渲染层（只拼 HTML，不碰磁盘）
+  recorder.py   记一条的完整链路（CLI 与网页共用）
   llm.py        模型网关（三级降级 + 向量）
   config.py     配置
   prompts/      所有 prompt（纯文本）
