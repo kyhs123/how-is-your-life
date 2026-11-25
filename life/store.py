@@ -691,3 +691,36 @@ def 追加底色项(名字: str, 行们: list[str]) -> Path:
         for 行 in 行们:
             文件.write(f"- {行}\n")
     return 路径
+
+
+# ── media 与记录的关联 ───────────────────────────────────────
+#
+# 为什么需要这张表：media 里的文件名用的是「输入 id」，而记录用的是「记录 id」，
+# 两者不是一回事（一条输入可能拆成多条记录）。光靠文件名对不上，
+# 所以这里记一份对应关系；没有对应记录的文件才可能是孤儿。
+
+
+def media关联路径() -> Path:
+    return 确保vault就绪() / "media" / "关联.json"
+
+
+def 读media关联() -> dict:
+    """{文件名: [记录 id, ...]}"""
+    路径 = media关联路径()
+    if not 路径.exists():
+        return {}
+    try:
+        数据 = json.loads(路径.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return {}
+    return 数据 if isinstance(数据, dict) else {}
+
+
+def 写media关联(文件名: str, 记录id们: list[str]) -> None:
+    关联 = 读media关联()
+    旧 = list(关联.get(文件名) or [])
+    关联[文件名] = sorted({*旧, *记录id们})
+    _原子写入(
+        media关联路径(),
+        json.dumps(关联, ensure_ascii=False, indent=2) + "\n",
+    )

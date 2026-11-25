@@ -28,6 +28,7 @@ from life import promote as promote模块
 from life import recorder as recorder模块
 from life import review as review模块
 from life import server as server模块
+from life import tidy as tidy模块
 
 app = typer.Typer(
     add_completion=False,
@@ -555,6 +556,41 @@ def server(
         typer.echo(f"× 端口 {端口} 用不了（可能被别的程序占了）：{错误}")
         typer.echo("  换个端口：life server --port 8771")
         raise typer.Exit(1) from 错误
+
+
+# ── life tidy（瘦身）────────────────────────────────────────
+
+
+@app.command()
+def tidy(
+    天数: int = typer.Option(90, "--days", help="缓存保留多少天"),
+    干跑: bool = typer.Option(False, "--dry-run", help="只看能清多少，一个文件都不动"),
+):
+    """瘦身：清理旧缓存和孤儿全文。**记录一条都不动。**"""
+    数字 = tidy模块.扫描(天数)
+    typer.echo(
+        f"· 抽取缓存 {数字['缓存总数']} 个（{tidy模块.人话(数字['缓存字节'])}），"
+        f"其中 {数字['缓存可清']} 个超过 {天数} 天（{tidy模块.人话(数字['可清缓存字节'])}）"
+    )
+    typer.echo(
+        f"· media {数字['媒体总数']} 个，其中孤儿 {数字['孤儿媒体']} 个"
+        f"（{tidy模块.人话(数字['孤儿字节'])}）"
+    )
+    if 数字.get("未登记媒体"):
+        typer.echo(
+            f"  （另有 {数字['未登记媒体']} 个没登记关联——分不清归属，我不会动它们）"
+        )
+
+    if 干跑:
+        typer.echo("· 干跑：什么都没删。去掉 --dry-run 才真清。")
+        return
+
+    结果 = tidy模块.执行(天数)
+    typer.echo(
+        f"√ 清掉 {结果['缓存']} 个缓存、{结果['孤儿媒体']} 个孤儿全文，"
+        f"共 {tidy模块.人话(结果['字节'])}"
+    )
+    typer.echo("  （记录一条都没动；索引不用重建）")
 
 
 # ── life reindex ──────────────────────────────────────────────

@@ -253,6 +253,8 @@ def 抽取并保存(
             路径 = store.写条目(条目)
             index.写入条目(连接, 条目)
             路径们.append(路径)
+        # 让后面写 media 的时候知道这些全文/原件属于哪些记录
+        输入["记录id们"] = [p.stem for p in 路径们]
         return 路径们, 结果
     finally:
         连接.close()
@@ -280,13 +282,16 @@ def 处理文件(
             f"{结果.get('ocr_text') or '（没有识别出文字）'}\n\n"
             f"# 摘要\n\n{结果.get('digest') or '（没有摘要）'}\n"
         )
-        (vault / "media" / f"{输入['id']}.md").write_text(正文, encoding="utf-8")
+        文件名 = f"{输入['id']}.md"
+        (vault / "media" / 文件名).write_text(正文, encoding="utf-8")
+        store.写media关联(文件名, 输入.get("记录id们") or [])
 
     if 输入.get("keep_image") or 输入.get("keep_file"):
         # 保留时的文件名用记录 id，不用上传时的原名（原名不可信，也容易重名）
         目标 = vault / "media" / f"{输入['id']}{暂存.suffix}"
         目标.parent.mkdir(parents=True, exist_ok=True)
         暂存.replace(目标)
+        store.写media关联(目标.name, 输入.get("记录id们") or [])
         说(f"· 原文件按你的要求留下了：vault/media/{目标.name}")
     else:
         暂存.unlink(missing_ok=True)

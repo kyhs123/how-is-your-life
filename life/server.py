@@ -22,7 +22,7 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Callable
 
-from life import config, goal, index, jobs, pages, portrait, promote, recorder, retrieve, review, store
+from life import config, goal, index, jobs, pages, portrait, promote, recorder, retrieve, review, store, tidy
 from life import uploads as uploads模块
 
 最大请求体 = 64 * 1024  # 64KB。表单填不出一百个字，再大多半是攻击
@@ -460,6 +460,7 @@ class 处理器(BaseHTTPRequestHandler):
             "settle": ("归纳最近的记录", self._作业提名, "/chapters"),
             "reindex": ("重建索引", self._作业索引, "/settings"),
             "retry": ("补抽没抽成的记录", self._作业补抽, "/"),
+            "tidy": ("瘦身：清理旧缓存与孤儿全文", self._作业瘦身, "/settings"),
         }
         项 = 表.get(动作)
         if 项 is None:
@@ -495,6 +496,13 @@ class 处理器(BaseHTTPRequestHandler):
         if 结果["总数"] == 0:
             return "队列是空的，没有要补的。"
         return f"补抽 {结果['成功']} 条，仍失败 {结果['失败']} 条"
+
+    def _作业瘦身(self) -> str:
+        结果 = tidy.执行()
+        return (
+            f"清掉 {结果['缓存']} 个缓存、{结果['孤儿媒体']} 个孤儿全文，"
+            f"共 {tidy.人话(结果['字节'])}。记录一条都没动。"
+        )
 
     def _作业索引(self) -> str:
         结果 = index.重建索引()
@@ -532,6 +540,8 @@ class 处理器(BaseHTTPRequestHandler):
         finally:
             连接.close()
 
+        占用 = tidy.扫描()
+
         self._页面(
             HTTPStatus.OK,
             pages.设置(
@@ -547,9 +557,20 @@ class 处理器(BaseHTTPRequestHandler):
                         ("累计 token", str(数.get("总token", 0))),
                         ("监听地址", f"127.0.0.1:{self.server.server_address[1]}"),
                         ("Python", sys.version.split()[0]),
+                        (
+                            "抽取缓存",
+                            f"{占用['缓存总数']} 个（{tidy.人话(占用['缓存字节'])}）"
+                            f"｜可清 {占用['缓存可清']} 个",
+                        ),
+                        (
+                            "媒体全文",
+                            f"{占用['媒体总数']} 个｜孤儿 {占用['孤儿媒体']} 个"
+                            f"（{tidy.人话(占用['孤儿字节'])}）",
+                        ),
                     ]
                 },
-                按钮=pages.作业按钮(self.令牌, "reindex", "重建索引", 次要=True),
+                按钮=pages.作业按钮(self.令牌, "tidy", "瘦身（清 90 天前的缓存）")
+                + pages.作业按钮(self.令牌, "reindex", "重建索引", 次要=True),
             ),
         )
 
