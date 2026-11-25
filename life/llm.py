@@ -53,10 +53,14 @@ def 调用(
     用户内容: str,
     结构: dict | None = None,
     图片路径: Path | None = None,
+    要JSON: bool = True,
 ) -> 模型回复:
     """调一次模型，把回复原文交回去。
 
     参数里的「结构」是给第 1 级降级用的 JSON Schema；不给就跳过第 1 级。
+
+    `要JSON=False` 表示这次要的是**人话**（画像、回顾那种散文），
+    不要加 response_format——否则模型会硬憋一个 JSON 出来，写进文件就是一片空白。
     """
     任务 = config.读取任务(任务名)
     if 任务 is None:
@@ -66,7 +70,12 @@ def 调用(
     消息 = _组装消息(系统提示, 用户内容, 图片路径)
 
     # 从最高的要求往下试
-    尝试顺序 = [1, 2, 3] if 结构 else [2, 3]
+    if 结构:
+        尝试顺序 = [1, 2, 3]
+    elif 要JSON:
+        尝试顺序 = [2, 3]
+    else:
+        尝试顺序 = [3]
     最后错误: Exception | None = None
 
     for 级别 in 尝试顺序:
@@ -121,7 +130,7 @@ def _发一次(
         "model": 任务.model,
         "messages": 消息,
         "temperature": 0.2,  # 抽取要稳定，不要文采
-        "max_tokens": 2000,
+        "max_tokens": 任务.max_tokens,
     }
 
     if 级别 == 1 and 结构:
@@ -146,7 +155,7 @@ def _发一次(
     )
 
     try:
-        with urllib.request.urlopen(请求, timeout=60) as 响应:
+        with urllib.request.urlopen(请求, timeout=任务.timeout) as 响应:
             原始 = 响应.read().decode("utf-8")
     except urllib.error.HTTPError as 错误:
         详情 = 错误.read().decode("utf-8", errors="replace")
@@ -171,15 +180,29 @@ def _发一次(
     # ── 拆回复 ──
     try:
         数据 = json.loads(原始)
-        文本 = 数据["choices"][0]["message"]["content"]
+        选择 = 数据["choices"][0]
+        文本 = 选择["message"]["content"] or ""
+        结束原因 = 选择.get("finish_reason")
+        思考 = 选择["message"].get("reasoning_content") or ""
     except (json.JSONDecodeError, KeyError, IndexError, TypeError) as 错误:
         raise 模型错误(
             f"接口返回的东西看不懂（不是标准的 chat 格式）。前 300 个字：{原始[:300]}"
         ) from 错误
 
+    # 思考型模型的坑：token 全花在「想」上，正文一个字都没剩。
+    # 这种情况必须说人话，否则用户只会看到一个空文件。
+    if not 文本.strip() and 结束原因 == "length":
+        raise 模型错误(
+            f"模型把 {任务.max_tokens} 个 token 全用在「思考」上了，正文一个字都没剩下"
+            f"（这次想了 {len(思考)} 字）。\n"
+            f"两个办法：\n"
+            f"  1. 把 providers.yaml 里 tasks.{任务名} 的 max_tokens 调大（比如 8000）\n"
+            f"  2. 换一个不思考的模型"
+        )
+
     用量 = 数据.get("usage") or {}
     return 模型回复(
-        文本=文本 or "",
+        文本=文本,
         输入token=int(用量.get("prompt_tokens") or 0),
         输出token=int(用量.get("completion_tokens") or 0),
         模型名=str(数据.get("model") or 任务.model),
@@ -272,7 +295,7 @@ def _发嵌入请求(任务: config.任务配置, 密钥: str, 这一批: list[s
         method="POST",
     )
     try:
-        with urllib.request.urlopen(请求, timeout=60) as 响应:
+        with urllib.request.urlopen(请求, timeout=任务.timeout) as 响应:
             原始 = 响应.read().decode("utf-8")
     except urllib.error.HTTPError as 错误:
         详情 = 错误.read().decode("utf-8", errors="replace")

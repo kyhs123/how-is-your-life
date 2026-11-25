@@ -39,6 +39,15 @@ def vault目录() -> Path:
     return 工作区根目录() / "vault"
 
 
+def 示例数据目录() -> Path:
+    """仓库自带的虚构示例数据（`life demo` 用）。
+
+    注意这里**不看 LIFE_HOME**：示例数据是代码仓库的一部分，不是用户数据。
+    你把 LIFE_HOME 指到别处试功能，示例数据仍然应该能在仓库里找到。
+    """
+    return 包目录.parent / "data.example"
+
+
 def providers配置文件() -> Path:
     """providers.yaml 的路径。它不进仓库（里面是你自己的接口地址）。"""
     return 工作区根目录() / "providers.yaml"
@@ -53,6 +62,11 @@ class 任务配置:
     model: str
     json模式: str | None = None
     batch: int = 1
+    max_tokens: int = 2000
+    timeout: int = 60
+    # 思考型模型（deepseek-v4-pro / v4.1-flash）会把 token 大量花在「想」上，
+    # 上限给小了，正文一个字都出不来（finish_reason=length、content 为空）。
+    # 所以每个任务可以单独调这个上限。
 
     def 取密钥(self) -> str:
         """取真实 key：先看环境变量，再看 .env 文件。
@@ -102,6 +116,8 @@ def 读取任务(任务名: str) -> 任务配置 | None:
         model=str(任务表.get("model", "")),
         json模式=任务表.get("json"),
         batch=int(任务表.get("batch", 1)),
+        max_tokens=int(任务表.get("max_tokens", 2000)),
+        timeout=int(任务表.get("timeout", 60)),
     )
 
 

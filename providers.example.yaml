@@ -25,11 +25,15 @@ tasks:
   settle:
     provider: chat
     model: deepseek-chat
+    # 思考型模型（带 reasoning 的）会把 token 大量花在「想」上。
+    # 上限给小了，正文一个字都出不来（finish_reason=length）。写长文的任务给 8000。
+    max_tokens: 8000
 
   # 对话：产品的命门，用你付得起的最强那档
   dialogue:
     provider: chat
     model: deepseek-chat
+    max_tokens: 8000
 
   # 视觉：必须是多模态模型（上面的 chat 模型不支持图片时换成别的）
   vision:
