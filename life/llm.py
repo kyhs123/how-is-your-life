@@ -18,10 +18,34 @@ import json
 import socket
 import urllib.error
 import urllib.request
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from life import config
+
+
+def _缩短(文本: str, 上限: int = 300) -> str:
+    """上游报错经常是一大坨嵌套 JSON。尽量挑出里面的人话（msg / message）。"""
+    import json as _json
+
+    try:
+        数据 = _json.loads(文本)
+    except (ValueError, TypeError):
+        数据 = None
+
+    人话 = ""
+    if isinstance(数据, dict):
+        for 键 in ("error", "message"):
+            值 = 数据.get(键)
+            if isinstance(值, dict):
+                人话 = str(值.get("msg") or 值.get("message") or "")
+            elif isinstance(值, str):
+                人话 = 值
+            if 人话:
+                break
+
+    一行 = " ".join((人话 or 文本).split())
+    return 一行 if len(一行) <= 上限 else 一行[:上限] + "…"
 
 
 class 模型错误(Exception):
@@ -34,6 +58,13 @@ class 网络错误(模型错误):
 
 class 接口不支持(模型错误):
     """接口不认 response_format，需要降一级再试。"""
+
+
+class 预算不足(模型错误):
+    """思考型模型把 max_tokens 全花在推理上，正文一个字都没剩。
+
+    这种情况值得自动重试——翻倍给额度通常就好了，不该让用户去改配置。
+    """
 
 
 @dataclass
@@ -81,14 +112,24 @@ def 调用(
     for 级别 in 尝试顺序:
         try:
             return _发一次(任务, 密钥, 消息, 级别, 结构)
+        except 预算不足 as 错误:
+            # 自动把额度翻倍再试一次（上限 20000），省得用户去改 providers.yaml
+            加大 = min(任务.max_tokens * 3, 20000)
+            if 加大 <= 任务.max_tokens:
+                raise
+            try:
+                return _发一次(replace(任务, max_tokens=加大), 密钥, 消息, 级别, 结构)
+            except 预算不足:
+                raise 错误 from None
         except 接口不支持 as 错误:
             最后错误 = 错误
             continue
 
     raise 模型错误(
-        f"这个接口三种结构化输出方式都不支持，我没法保证拿到规范的结果。\n"
+        f"这个接口试了三种输出方式都被拒了，我没法保证拿到规范的结果。\n"
         f"最后一次的错误是：{最后错误}\n"
-        f"建议：把 providers.yaml 里 tasks.{任务名} 换成支持 JSON 输出的模型。"
+        f"你可以：① 把 providers.yaml 里 tasks.{任务名} 换个模型；"
+        f"② 把这段内容拆短一点再记；③ 先不管，内容已经存好了，之后跑 `life retry`。"
     )
 
 
@@ -159,16 +200,32 @@ def _发一次(
             原始 = 响应.read().decode("utf-8")
     except urllib.error.HTTPError as 错误:
         详情 = 错误.read().decode("utf-8", errors="replace")
-        是不是格式问题 = 错误.code == 400 and any(
-            词 in 详情.lower() for 词 in ("response_format", "json_schema", "json_object")
-        )
-        if 是不是格式问题 and 级别 < 3:
-            raise 接口不支持(f"接口不认第 {级别} 级的输出格式：{详情[:200]}") from 错误
+
+        # 400 / 422 都是「这次请求被拒」。**原因可能藏在很深的 upstream 报错里**
+        # （比如网关把上游的 {"code":11135} 包了一层，看不出跟 response_format 有关）。
+        # 三级降级的意义就是「不知道原因也往下试」——所以只要还有更低的级别，先降级再说。
+        # 实测：上游 400 时第一级 json_schema 被拒，降到第二级就成功了。
+        if 错误.code in (400, 422):
+            raise 接口不支持(
+                f"第 {级别} 级请求被拒（HTTP {错误.code}）：{_缩短(详情)}"
+            ) from 错误
+
         raise 模型错误(
             f"模型接口返回了错误（HTTP {错误.code}）。\n"
-            f"接口原话：{详情[:500]}"
+            f"接口原话：{_缩短(详情)}\n"
+            f"这件事不影响你已经写下的内容——它已经存在硬盘上，"
+            f"联网或换模型后跑 `life retry` 就能补。"
         ) from 错误
     except (urllib.error.URLError, socket.timeout, TimeoutError) as 错误:
+        是超时 = "timed out" in str(错误).lower() or isinstance(错误, (socket.timeout, TimeoutError))
+        if 是超时:
+            raise 网络错误(
+                f"等了 {任务.timeout} 秒还没返回，我先放弃了（模型 {任务.model} 太慢）。\n"
+                f"长文本 + 会思考的模型确实会这样。两个办法：\n"
+                f"  1. 把 providers.yaml 里这个任务的 timeout 调大（比如 300）\n"
+                f"  2. 把内容拆短一点再记\n"
+                f"你的输入已经存在硬盘上，跑 `life retry` 就能补。"
+            ) from 错误
         raise 网络错误(
             f"连不上模型接口（{任务.base_url}）。\n"
             f"可能是断网、也可能是地址写错了。你的输入已经存在硬盘上，联网后跑 `life retry` 就能补上。\n"
@@ -192,11 +249,11 @@ def _发一次(
     # 思考型模型的坑：token 全花在「想」上，正文一个字都没剩。
     # 这种情况必须说人话，否则用户只会看到一个空文件。
     if not 文本.strip() and 结束原因 == "length":
-        raise 模型错误(
-            f"模型把 {任务.max_tokens} 个 token 全用在「思考」上了，正文一个字都没剩下"
-            f"（这次想了 {len(思考)} 字）。\n"
+        raise 预算不足(
+            f"模型 {任务.model} 把 {任务.max_tokens} 个 token 全用在「思考」上了，"
+            f"正文一个字都没剩下（这次想了 {len(思考)} 字）。\n"
             f"两个办法：\n"
-            f"  1. 把 providers.yaml 里 tasks.{任务名} 的 max_tokens 调大（比如 8000）\n"
+            f"  1. 把 providers.yaml 里这个任务的 max_tokens 调大（比如 8000）\n"
             f"  2. 换一个不思考的模型"
         )
 
