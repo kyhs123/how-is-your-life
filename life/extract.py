@@ -97,6 +97,7 @@ def 抽取(
     私密: bool = False,
     用假模型: bool = False,
     内容指纹: str = "",
+    时间提示: str = "",
 ) -> dict:
     """把一次输入抽成一条或几条 entry 的**原始字段**（还没分配 id）。
 
@@ -135,7 +136,7 @@ def 抽取(
             return {**命中, "prompt_ver": 版本, "模型名": 模型, "命中缓存": True}
 
     系统提示 = config.prompt文件(prompt名).read_text(encoding="utf-8")
-    用户内容 = _组装用户内容(原文, 部分, 有图=有图)
+    用户内容 = _组装用户内容(原文, 部分, 有图=有图, 时间提示=时间提示)
 
     # ④ 空输入不调模型。
     # 真模型被喂了空字符串时会「礼貌地」编一条出来（实测编过一条网络配置记录），
@@ -250,9 +251,11 @@ def _记一笔账(回复: llm.模型回复) -> None:
         连接.close()
 
 
-def _组装用户内容(原文: str, 部分: str, *, 有图: bool) -> str:
+def _组装用户内容(原文: str, 部分: str, *, 有图: bool, 时间提示: str = "") -> str:
     """把用户原话和一点提示拼成发给模型的内容。"""
     片段 = []
+    if 时间提示.strip():
+        片段.append(时间提示.strip())
     if 原文.strip():
         片段.append(原文.strip())
     elif 有图:

@@ -213,6 +213,9 @@ def 新建条目(**字段) -> dict:
     条目 = {
         "id": 字段.pop("id"),
         "ts": str(ts值),
+        # 人话时间：可以写 "2023"、"2023-09"、"大一"，也可以是空（时间不详）。
+        # ts 仍然是给程序用的时间戳；when 是给人看的。两个都要，因为「不记得哪天」很常见。
+        "when": str(字段.pop("when", "") or ""),
         "part": 字段.pop("part", "record"),
         "did": 字段.pop("did", ""),
         "minutes": int(字段.pop("minutes", 0) or 0),
@@ -389,6 +392,7 @@ def 格式化成markdown(条目: dict) -> str:
         "---",
         f"id: {条目['id']}",
         f"ts: {条目['ts']}",
+        f"when: {_文本(条目['when'])}",
         f"part: {条目['part']}",
         f"did: {_文本(条目['did'])}",
         f"minutes: {条目['minutes']}",

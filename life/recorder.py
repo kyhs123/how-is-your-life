@@ -13,6 +13,8 @@
 
 from __future__ import annotations
 
+import re
+from datetime import date, datetime
 from pathlib import Path
 from typing import Callable
 
@@ -37,6 +39,7 @@ def 记录一条(
     私密: bool = False,
     保留图片: bool = False,
     用假模型: bool = False,
+    时间: str = "",
     提示: 提示函数 | None = None,
 ) -> dict:
     """记一条。返回结果字典，调用方负责把结果变成屏幕上的一句话。
@@ -65,7 +68,15 @@ def 记录一条(
         return {"状态": "输入有问题", "路径们": [], "收件": None, "错误": f"找不到这个文件：{文档}"}
 
     vault = store.确保vault就绪()
-    此刻 = store.现在()
+    # 「什么时候」可以写得含糊（大一 / 2023 / 2023-09），也可能是空的。
+    # 能转成日期就用它做时间戳；转不出来（比如「大一」）就把时间戳记成录入时刻，
+    # 人话时间原样存进 when —— 见 docs/WEBUI.md §2.5。
+    try:
+        某天, 时间说明 = 解析过去时间(时间)
+    except ValueError as 错误:
+        # 比如「不能补记未来的事」——这是输入问题，不是崩了
+        return {"状态": "输入有问题", "路径们": [], "收件": None, "错误": str(错误)}
+    此刻 = _某天中午(某天) if 某天 is not None else store.现在()
     输入id, _ = store.分配id(此刻)
 
     # ① 文件先复制进 vault（C1：必须在仓库内；也保证原始文件被删掉也不影响）
@@ -130,6 +141,7 @@ def 记录一条(
         "id": 输入id,
         "ts": store.时间文本(此刻),
         "kind": 种类,
+        "when": 时间.strip(),
         "原文": 原文,
         "部分": "emotion" if 情感 else "record",
         "private": 私密,
@@ -137,6 +149,12 @@ def 记录一条(
         "图片": str(暂存.relative_to(vault)).replace("\\", "/") if 暂存 else "",
         "图片原名": 图片.name if 图片 is not None else 文档原名,
         "内容指纹": 指纹,
+        "时间提示": (
+            f"这条记录是补记的，发生在「{时间.strip()}」（时间戳记为 {此刻.date().isoformat()}）。"
+            "正文里不要写「今天」「昨天」「刚刚」，直接写事实。"
+            if 时间.strip()
+            else ""
+        ),
         "尝试次数": 0,
         "最后错误": "",
     }
@@ -194,6 +212,7 @@ def 抽取并保存(
         私密=bool(输入.get("private")),
         用假模型=用假模型,
         内容指纹=输入.get("内容指纹", ""),
+        时间提示=输入.get("时间提示", ""),
     )
 
     if 结果["status"] == "needs_review" and 结果.get("备注"):
@@ -210,6 +229,7 @@ def 抽取并保存(
             条目 = store.新建条目(
                 id=记录id,
                 ts=store.时间文本(时间),
+                when=输入.get("when", ""),
                 private=bool(输入.get("private")),
                 status=结果["status"],
                 **一条,
@@ -254,3 +274,66 @@ def 处理文件(
         说(f"· 原文件按你的要求留下了：vault/media/{目标.name}")
     else:
         暂存.unlink(missing_ok=True)
+
+
+# ── 补记历史时用的小工具 ─────────────────────────────────────
+
+
+def _某天中午(某天: date) -> datetime:
+    """把「哪一天」变成带时间戳的时刻。
+
+    用中午 12 点，避开时区边界和「零点算前一天」这类坑。
+    """
+    return datetime(某天.year, 某天.month, 某天.day, 12, 0, 0, tzinfo=store.中国时区)
+
+
+def 解析过去时间(文本: str) -> tuple[date | None, str]:
+    """把「什么时候」变成（日期 or None，给人看的说明）。
+
+    能认出来就转日期：`2023` / `2023-09` / `2023-09-15` / `2023年9月`。
+    认不出来（`大一`、`记不清了`）就返回 None —— 那就是**时间不详**，
+    不要把「记不清」硬塞成某一天。
+
+    缺的部分按月/年初补，并且明确告诉你补了什么（页面会显示这句说明）。
+    """
+    原 = (文本 or "").strip()
+    if not 原:
+        return None, "现在"
+
+    规范 = (
+        原.replace("/", "-")
+        .replace(".", "-")
+        .replace("年", "-")
+        .replace("月", "-")
+        .replace("日", "")
+        .strip("-")
+    )
+    匹配 = re.fullmatch(r"(\d{4})(?:-(\d{1,2}))?(?:-(\d{1,2}))?", 规范)
+    if not 匹配:
+        return None, f"时间不详（「{原}」认不出是哪天，按录入时间存，when 里留着原话）"
+
+    年 = int(匹配.group(1))
+    月 = int(匹配.group(2) or 1)
+    日 = int(匹配.group(3) or 1)
+
+    try:
+        某天 = date(年, 月, 日)
+    except ValueError:
+        return None, f"时间不详（「{原}」不是真实存在的日期）"
+
+    if 某天 > store.现在().date():
+        raise ValueError("不能补记未来的事。")
+
+    if not 匹配.group(2):
+        return 某天, f"{年} 年（只知道年份，时间戳记为 {某天.isoformat()}）"
+    if not 匹配.group(3):
+        return 某天, f"{年} 年 {月} 月（只知道月份，时间戳记为 {某天.isoformat()}）"
+    return 某天, 某天.isoformat()
+
+
+def 解析过去日期(文本: str) -> tuple[date, str]:
+    """要一个确定日期时用这个（认不出就报错）。"""
+    某天, 说明 = 解析过去时间(文本)
+    if 某天 is None:
+        raise ValueError(说明)
+    return 某天, 说明

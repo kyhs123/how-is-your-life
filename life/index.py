@@ -49,7 +49,8 @@ CREATE TABLE IF NOT EXISTS entries(
     status TEXT,
     body TEXT,
     anchors TEXT,
-    quote TEXT
+    quote TEXT,
+    "when" TEXT
 );
 
 CREATE VIRTUAL TABLE IF NOT EXISTS entries_fts
@@ -98,7 +99,12 @@ CREATE TABLE IF NOT EXISTS core(
 
 # 老库升级用：表已经存在时，这些列要补上去（CREATE TABLE IF NOT EXISTS 不会补列）
 后续补的列 = {
-    "entries": [("body", "TEXT"), ("anchors", "TEXT"), ("quote", "TEXT")],
+    "entries": [
+        ("body", "TEXT"),
+        ("anchors", "TEXT"),
+        ("quote", "TEXT"),
+        ("when", "TEXT"),
+    ],
 }
 
 
@@ -124,7 +130,8 @@ def 建表(连接: sqlite3.Connection) -> None:
             已有 = {行["name"] for 行 in 连接.execute(f"PRAGMA table_info({表名})")}
             for 列名, 类型 in 列们:
                 if 列名 not in 已有:
-                    连接.execute(f"ALTER TABLE {表名} ADD COLUMN {列名} {类型}")
+                    # 列名都加双引号：when 是 SQL 关键字，不加引号会报语法错
+                    连接.execute(f'ALTER TABLE {表名} ADD COLUMN "{列名}" {类型}')
         连接.commit()
     except sqlite3.Error as 错误:
         raise 索引错误(f"建索引表失败：{错误}") from 错误
@@ -138,8 +145,9 @@ def 写入条目(连接: sqlite3.Connection, 条目: dict) -> None:
                 """
                 INSERT OR REPLACE INTO entries
                     (id, ts, part, did, minutes, outcome, level, goal, chapter,
-                     valence, arousal, trigger, private, status, body, anchors, quote)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                     valence, arousal, trigger, private, status, body, anchors, quote,
+                     "when")
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """,
                 (
                     条目["id"],
@@ -159,6 +167,7 @@ def 写入条目(连接: sqlite3.Connection, 条目: dict) -> None:
                     条目["body"],
                     json.dumps(条目["anchors"], ensure_ascii=False),
                     条目["emotion"]["quote"],
+                    条目.get("when", ""),
                 ),
             )
             # 全文索引里同一个 id 只能有一行
@@ -349,6 +358,7 @@ def 行转条目(行: sqlite3.Row) -> dict:
     return {
         "id": 行["id"],
         "ts": 行["ts"],
+        "when": 行["when"] or "",
         "part": 行["part"],
         "did": 行["did"],
         "minutes": 行["minutes"],
