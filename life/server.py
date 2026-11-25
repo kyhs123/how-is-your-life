@@ -22,7 +22,7 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Callable
 
-from life import config, goal, index, pages, promote, recorder, retrieve, store
+from life import config, goal, index, jobs, pages, portrait, promote, recorder, retrieve, review, store
 from life import uploads as uploads模块
 
 最大请求体 = 64 * 1024  # 64KB。表单填不出一百个字，再大多半是攻击
@@ -189,9 +189,14 @@ class 处理器(BaseHTTPRequestHandler):
         self.wfile.write(数据)
 
     def _跳(self, 位置: str) -> None:
-        """PRG：POST 之后一律 303 跳转，否则刷新会重复提交。"""
+        """PRG：POST 之后一律 303 跳转，否则刷新会重复提交。
+
+        注意：HTTP 头只能是 latin-1，所以中文 id（目标名、任务名）必须先百分号编码，
+        不然一提交就 500。安全字符保持原样，避免二次编码。
+        """
+        安全位置 = urllib.parse.quote(位置, safe="/?&=:%#")
         self.send_response(HTTPStatus.SEE_OTHER)
-        self.send_header("Location", 位置)
+        self.send_header("Location", 安全位置)
         self.send_header("Content-Length", "0")
         self.end_headers()
 
@@ -268,13 +273,20 @@ class 处理器(BaseHTTPRequestHandler):
             self._目标页(urllib.parse.unquote(路径[len("/goals/") :]))
         elif 路径 == "/chapters":
             章节们 = store.全部章节()
-            self._页面(HTTPStatus.OK, pages.章节列表(self.令牌, 章节们))
+            self._页面(
+                HTTPStatus.OK,
+                pages.章节列表(self.令牌, 章节们, promote.待确认提名()),
+            )
         elif 路径.startswith("/chapters/"):
             self._章节页(urllib.parse.unquote(路径[len("/chapters/") :]))
         elif 路径 == "/portrait":
             self._画像页()
         elif 路径 == "/review":
             self._回顾页()
+        elif 路径 == "/review/latest":
+            self._回顾文件()
+        elif 路径.startswith("/jobs/"):
+            self._任务页(urllib.parse.unquote(路径[len("/jobs/") :]))
         elif 路径 == "/settings":
             self._设置页()
         else:
@@ -390,8 +402,9 @@ class 处理器(BaseHTTPRequestHandler):
                 命令="life portrait",
                 说明=(
                     "画像写的是假设，不是判决；每条都带「依据：N 次」。"
-                    "生成要调模型（一到两分钟），所以放在命令行做。"
+                    "生成要调模型（一到两分钟），点按钮后台跑，不用等在这里。"
                 ),
+                按钮=pages.作业按钮(self.令牌, "portrait", "生成 / 重新生成本季度画像"),
             ),
         )
 
@@ -418,11 +431,81 @@ class 处理器(BaseHTTPRequestHandler):
                 正文="\n".join(摘要),
                 命令="life review --week",
                 说明=(
-                    "这里给的是马上能算出来的数据。"
-                    "带叙述的完整回顾要调模型，回命令行跑上面那条命令。"
+                    "上面是马上能算出来的数据。"
+                    "带叙述的完整回顾要调模型，点按钮后台跑，写完存在 vault/review/。"
+                ),
+                按钮=pages.作业按钮(self.令牌, "review", "生成带叙述的回顾")
+                + (
+                    " <a class=\"btn plain\" href=\"/review/latest\">看上次生成的</a>"
+                    if (store.确保vault就绪() / "review").glob("*.html")
+                    else ""
                 ),
             ),
         )
+
+    # ── 后台任务（docs/WEBUI.md §2.6）──
+
+    def _任务页(self, 任务号: str) -> None:
+        任务 = jobs.取(任务号)
+        if 任务 is None:
+            self._出错(HTTPStatus.NOT_FOUND, "找不到这个任务", "进程重启过的话，任务记录就没了。")
+            return
+        self._页面(HTTPStatus.OK, pages.任务页(self.令牌, 任务))
+
+    def _起作业(self, 动作: str) -> None:
+        表 = {
+            "portrait": ("生成季度画像", self._作业画像, "/portrait"),
+            "review": ("生成带叙述的回顾", self._作业回顾, "/review"),
+            "settle": ("归纳最近的记录", self._作业提名, "/chapters"),
+            "reindex": ("重建索引", self._作业索引, "/settings"),
+        }
+        项 = 表.get(动作)
+        if 项 is None:
+            self._出错(HTTPStatus.NOT_FOUND, "没有这种任务", 动作)
+            return
+        名称, 函数, 去向 = 项
+        任务, _新的 = jobs.启动(动作, 名称, 函数, 去向=去向)
+        self._跳(f"/jobs/{任务.id}")
+
+    def _作业画像(self) -> str:
+        结果 = portrait.生成()
+        尾巴 = ""
+        if 结果["缺依据的假设"]:
+            尾巴 = f"，其中 {len(结果['缺依据的假设'])} 条假设没写依据（多半是场面话）"
+        return f"{结果['季度']} 画像已生成（{结果['token']} token）{尾巴}"
+
+    def _作业回顾(self) -> str:
+        文本, 数据 = review.生成(周=True, 用HTML=True)
+        目录 = store.确保vault就绪() / "review"
+        目录.mkdir(parents=True, exist_ok=True)
+        路径 = 目录 / f"{store.现在().date().isoformat()}-周回顾.html"
+        路径.write_text(文本, encoding="utf-8")
+        return f"写好了 {len(数据['条目们'])} 条记录的回顾：vault/review/{路径.name}"
+
+    def _作业提名(self) -> str:
+        结果 = promote.提名()
+        if 结果["说明"]:
+            return 结果["说明"]
+        return f"找到 {结果['主题数']} 个主题，提名 {len(结果['提名'])} 条"
+
+    def _作业索引(self) -> str:
+        结果 = index.重建索引()
+        return f"扫描 {结果['扫描']} 个文件，写入 {结果['成功']} 条记录"
+
+    def _回顾文件(self) -> None:
+        """把最近生成的那份回顾 HTML 直接发给浏览器。"""
+        目录 = store.确保vault就绪() / "review"
+        文件们 = sorted(目录.glob("*.html"))
+        if not 文件们:
+            self._出错(HTTPStatus.NOT_FOUND, "还没生成过回顾", "回回顾页点一下「生成」。")
+            return
+        数据 = 文件们[-1].read_bytes()
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(数据)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(数据)
 
     def _设置页(self) -> None:
         from life import llm
@@ -458,6 +541,7 @@ class 处理器(BaseHTTPRequestHandler):
                         ("Python", sys.version.split()[0]),
                     ]
                 },
+                按钮=pages.作业按钮(self.令牌, "reindex", "重建索引", 次要=True),
             ),
         )
 
@@ -492,6 +576,8 @@ class 处理器(BaseHTTPRequestHandler):
             self._改条目(urllib.parse.unquote(路径[len("/entries/") :]), 表单)
         elif 路径 == "/goals/new":
             self._建目标(表单)
+        elif 路径.startswith("/jobs/"):
+            self._起作业(urllib.parse.unquote(路径[len("/jobs/") :]))
         elif 路径.startswith("/promotions/"):
             self._晋升(urllib.parse.unquote(路径[len("/promotions/") :]))
         elif 路径.startswith("/goals/"):

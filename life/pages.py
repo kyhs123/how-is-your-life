@@ -45,7 +45,9 @@ def q(值: str) -> str:
 # ── 骨架 ─────────────────────────────────────────────────────
 
 
-def 布局(标题: str, 内容: str, *, 活跃: str = "", 令牌: str = "") -> str:
+def 布局(
+    标题: str, 内容: str, *, 活跃: str = "", 令牌: str = "", 自刷秒数: int = 0
+) -> str:
     """所有页面共用：导航 + 样式 + 页脚。"""
     链接 = "".join(
         f'<a href="{地址}"{" aria-current=page" if 地址 == 活跃 else ""}>{e(名)}</a>'
@@ -57,6 +59,7 @@ def 布局(标题: str, 内容: str, *, 活跃: str = "", 令牌: str = "") -> s
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="csrf-token" content="{e(令牌)}">
+{"<meta http-equiv=\"refresh\" content=\"" + str(自刷秒数) + "\">" if 自刷秒数 else ""}
 <title>{e(标题)} · 你过得怎么样</title>
 <style>{样式()}</style>
 </head>
@@ -509,8 +512,34 @@ def 发小时(分钟: int) -> str:
 # ── 章节 ─────────────────────────────────────────────────────
 
 
-def 章节列表(令牌: str, 章节们: list[dict]) -> str:
+def 章节列表(
+    令牌: str, 章节们: list[dict], 提名们: list[dict] | None = None
+) -> str:
+    提名们 = 提名们 or []
     块 = ['<section><h2>章节 <small>（靠证据晋升上来的主线）</small></h2>']
+
+    if 提名们:
+        块.append('<h3>等你确认的提名</h3>')
+        块.append('<p class="hint">系统只提名，认不认由你。拒绝过的以后不会再提。</p>')
+        for 提名 in 提名们:
+            标题 = 提名.get("标题", "")
+            块.append(
+                f"""<article class="card">
+  <p class="did"><b>{e(标题)}</b></p>
+  <p class="meta">{e(提名.get("摘要", ""))}</p>
+  <p class="meta">{提名.get("条数", 0)} 条记录 ｜ 跨 {'、'.join(提名.get("月份", []))}</p>
+  <div class="actions">
+    <form method="post" action="/promotions/{q(标题)}/yes" class="inline">
+      <input type="hidden" name="token" value="{e(令牌)}">
+      <button type="submit">要</button>
+    </form>
+    <form method="post" action="/promotions/{q(标题)}/no" class="inline">
+      <input type="hidden" name="token" value="{e(令牌)}">
+      <button type="submit" class="plain">不要</button>
+    </form>
+  </div>
+</article>"""
+            )
     if 章节们:
         块.append('<ul class="目标们">')
         for 章节 in 章节们:
@@ -526,9 +555,10 @@ def 章节列表(令牌: str, 章节们: list[dict]) -> str:
         块.append(
             空状态("还没有章节。它们在 `life settle` 提名、`life promote` 确认之后才出现。")
         )
+    块.append('<p class="actions">' + 作业按钮(令牌, "settle", "归纳最近的记录（生成提名）") + "</p>")
     块.append(
         '<p class="hint">章节不是自动生成的：系统提名，你确认。'
-        "页面上只看得见结果，生成要回命令行。</p>"
+        "归纳只写提名，不会动你的记录。</p>"
     )
     块.append("</section>")
     return 布局("章节", "\n".join(块), 活跃="/chapters", 令牌=令牌)
@@ -571,16 +601,18 @@ def 只读文本页(
     正文: str,
     命令: str,
     说明: str,
+    按钮: str = "",
 ) -> str:
     块 = [
         f'<section><h2>{e(标题)}</h2>',
         f'<p class="hint">{e(说明)}</p>',
-        f'<p class="cmd"><code>{e(命令)}</code></p>',
+        f'<p class="actions">{按钮}</p>' if 按钮 else "",
+        f'<p class="hint">命令行等价：<code>{e(命令)}</code></p>',
     ]
     if 正文.strip():
         块.append(f'<article class="card text">{_简易markdown(正文)}</article>')
     else:
-        块.append(空状态("还没有生成过。回命令行跑上面那条命令，再来这里看。"))
+        块.append(空状态("还没有生成过。点上面的按钮生成，一两分钟后回来看。"))
     块.append("</section>")
     return 布局(标题, "\n".join(块), 活跃=地址, 令牌=令牌)
 
@@ -623,18 +655,69 @@ def _简易markdown(文本: str) -> str:
 # ── 设置 ─────────────────────────────────────────────────────
 
 
-def 设置(令牌: str, 信息: dict) -> str:
+def 设置(令牌: str, 信息: dict, 按钮: str = "") -> str:
     行 = "".join(
         f"<tr><th>{e(名)}</th><td>{e(值)}</td></tr>" for 名, 值 in 信息["项"]
     )
     块 = [
         '<section><h2>设置</h2>',
         f'<table class="info">{行}</table>',
+        f'<p class="actions">{按钮}</p>' if 按钮 else "",
         '<p class="hint">这里只读。要改配置，编辑 <code>providers.yaml</code> 和 <code>.env</code>，'
         "它们都在 <code>.gitignore</code> 里。</p>",
         "</section>",
     ]
     return 布局("设置", "\n".join(块), 活跃="/settings", 令牌=令牌)
+
+
+# ── 后台任务（docs/WEBUI.md §2.6）────────────────────────────
+
+
+def 作业按钮(令牌: str, 动作: str, 标签: str, *, 说明: str = "", 次要: bool = False) -> str:
+    """一个能起后台任务的按钮。"""
+    类 = "btn plain" if 次要 else "btn"
+    return (
+        f'<form method="post" action="/jobs/{q(动作)}" class="inline">'
+        f'<input type="hidden" name="token" value="{e(令牌)}">'
+        f'<button type="submit" class="{类}">{e(标签)}</button></form>'
+        + (f'<span class="hint"> {e(说明)}</span>' if 说明 else "")
+    )
+
+
+def 任务页(令牌: str, 任务) -> str:
+    """后台任务的进度页。跑着就自刷，跑完显示结果。"""
+    秒 = int(任务.用了多少秒)
+    块 = [f"<section><h2>{e(任务.名称)}</h2>"]
+
+    if 任务.状态 == "running":
+        块.append(
+            f'<p class="facts">正在跑 · 已经 {秒} 秒'
+            f"{' · 这类活一般要一两分钟' if 秒 < 60 else ''}</p>"
+        )
+        块.append(
+            '<p class="hint">这个页面每 3 秒自动刷新一次。可以先去做别的，跑完回来看；'
+            "任务在后台继续跑，关掉页面也不会中断。</p>"
+        )
+    elif 任务.状态 == "failed":
+        块.append(pages_错误(任务.错误))
+        块.append('<p class="actions">' + 作业按钮(令牌, 任务.动作, "重试") + "</p>")
+    else:
+        块.append(f'<p class="facts">完成 · 用了 {秒} 秒</p>')
+        块.append(f'<p>{e(任务.结果)}</p>')
+        if 任务.去向:
+            块.append(
+                f'<p class="actions"><a class="btn" href="{e(任务.去向)}">去看看</a>'
+                f'<a class="btn plain" href="/">回今天</a></p>'
+            )
+    块.append("</section>")
+    return 布局(
+        任务.名称, "\n".join(块), 令牌=令牌, 自刷秒数=3 if 任务.状态 == "running" else 0
+    )
+
+
+def pages_错误(文字: str) -> str:
+    return f'<p class="error">{e(文字)}</p>'
+
 
 
 # ── 小零件 ───────────────────────────────────────────────────
@@ -712,12 +795,15 @@ form label{display:block;margin:0 0 12px;font-size:13px;color:var(--淡)}
   border:1px dashed var(--线);border-radius:6px;color:var(--淡)}
 .file .hint{display:block;margin-top:5px}
 .actions{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:12px 0 0}
+form.inline{display:inline-block;margin:0}
+button.plain{background:transparent;color:var(--淡);border-color:var(--线)}
+button.plain:hover{color:var(--墨)}
 button{font:inherit;padding:7px 16px;border-radius:6px;border:1px solid var(--点);
   background:var(--点);color:#fff;cursor:pointer}
 button:hover{filter:brightness(1.06)}
 .btn{display:inline-block;padding:6px 15px;border-radius:6px;border:1px solid var(--点);
   background:var(--点);color:#fff;text-decoration:none;font-size:14px}
-.btn.plain{background:transparent;color:var(--淡);border-color:var(--线)}
+.btn.plain{background:transparent;color:var(--淡);border-color:var(--线);cursor:pointer}
 .hint{color:var(--淡);font-size:12px;margin:6px 0}
 .meta{color:var(--淡);font-size:12.5px;margin:4px 0}
 .facts{color:var(--淡);font-size:12.5px;margin:10px 0}
