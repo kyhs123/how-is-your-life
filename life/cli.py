@@ -19,7 +19,8 @@ from typing import Optional
 
 import typer
 
-from life import config, extract, index, llm, store
+from life import config, extract, index, llm, retrieve, store
+from life import ask as ask模块
 from life import board as board模块
 
 app = typer.Typer(
@@ -172,6 +173,87 @@ def retry(演示: bool = typer.Option(False, "--demo", help="用假模型演示�
     typer.echo(f"· 完成：补抽 {成功} 条，仍失败 {失败} 条。")
 
 
+# ── life ask ──────────────────────────────────────────────────
+
+
+@app.command()
+def ask(
+    问题: str = typer.Argument(..., help="你想问的话，加引号。比如 life ask \"我好累\""),
+    取几条: int = typer.Option(6, "--num", help="召回几条旧记录（5~8 最合适）"),
+    不用向量: bool = typer.Option(
+        False, "--no-vectors", help="跳过向量路，只走全文 + 结构两路"
+    ),
+    只看召回: bool = typer.Option(
+        False, "--dry-run", help="只显示召回到哪几条记录，不调对话模型（省钱、方便排查）"
+    ),
+):
+    """带着你以前的记录回答问题。"""
+    if 只看召回:
+        _打印召回(问题, 取几条=取几条, 用向量=not 不用向量)
+        return
+
+    try:
+        结果 = ask模块.问(问题, 取几条=取几条, 用向量=not 不用向量)
+    except config.配置错误 as 错误:
+        typer.echo(f"× {错误}")
+        raise typer.Exit(1) from 错误
+    except llm.网络错误 as 错误:
+        typer.echo(f"× 连不上模型，这次没回答成。\n  {错误}")
+        raise typer.Exit(1) from 错误
+    except llm.模型错误 as 错误:
+        typer.echo(f"× 模型那边出问题了。\n  {错误}")
+        raise typer.Exit(1) from 错误
+
+    typer.echo("")
+    typer.echo(结果["回答"].strip())
+    typer.echo("")
+
+    if 结果["没做到"]:
+        typer.echo("· 这次回答有几条硬要求没做到（已经重试过一次）：")
+        for 一条 in 结果["没做到"]:
+            typer.echo(f"    - {一条}")
+        typer.echo("  （这是模型的问题，不是你写错了。可以再问一次，或者调 prompt。）")
+
+    typer.echo(
+        f"· 用到了 {len(结果['召回'])} 条旧记录 ｜ 上下文约 {结果['上下文token']} token "
+        f"｜ 本次 {结果['token']} token"
+    )
+    for 提示 in 结果["诊断"].get("提示", []):
+        typer.echo(f"· {提示}")
+
+
+def _打印召回(问题: str, *, 取几条: int, 用向量: bool) -> None:
+    """--dry-run：只给检索结果，让人能判断「它到底有没有翻出该翻出来的东西」。"""
+    try:
+        结果, 诊断 = retrieve.召回(问题, 取几条=取几条, 用向量=用向量)
+    except index.索引错误 as 错误:
+        typer.echo(f"× {错误}")
+        raise typer.Exit(1) from 错误
+
+    typer.echo(f"· 查询：{问题}")
+    各路 = 诊断.get("各路", {})
+    typer.echo(
+        "· 三路命中："
+        + "、".join(f"{名} {数} 条" for 名, 数 in 各路.items())
+    )
+    走了 = 诊断.get("结构走了哪几条") or []
+    if 走了:
+        typer.echo(f"· 结构检索走了：{'、'.join(走了)}")
+    for 提示 in 诊断.get("提示", []):
+        typer.echo(f"· {提示}")
+
+    if not 结果:
+        typer.echo("· 一条都没召回到。")
+        return
+
+    typer.echo("")
+    for 名次, 条目 in enumerate(结果, start=1):
+        档 = {0: "接触", 1: "复现", 2: "产出", 3: "能讲"}.get(条目["level"], "?")
+        typer.echo(
+            f"{名次}. {条目['ts'][:10]}（{档}）{'/'.join(条目['来源'])} ｜ {条目['did']}"
+        )
+
+
 # ── life board ────────────────────────────────────────────────
 
 
@@ -220,7 +302,11 @@ def board(
 # ── life reindex ──────────────────────────────────────────────
 
 @app.command()
-def reindex():
+def reindex(
+    向量: bool = typer.Option(
+        False, "--vectors", help="顺便重建向量索引（需要先配好向量接口）"
+    ),
+):
     """从 vault/now/ 里的 markdown 重建整个索引（索引删了也能跑）。"""
     结果 = index.重建索引()
     typer.echo(
@@ -230,6 +316,43 @@ def reindex():
         typer.echo(f"· 有 {len(结果['失败'])} 个文件没读进来（其它文件照常建好了）：")
         for 一行 in 结果["失败"]:
             typer.echo(f"    {一行}")
+
+    if not 向量:
+        return
+
+    能, 原因 = llm.能向量()
+    if not 能:
+        typer.echo(f"· 向量索引没建：{原因}")
+        return
+
+    条数, 说明 = _重建向量()
+    if 说明:
+        typer.echo(f"· 向量索引：{说明}")
+    else:
+        typer.echo(f"· 向量索引：{条数} 条已重建（私密记录不参与，§8）")
+
+
+def _重建向量() -> tuple[int, str]:
+    """给所有非私密记录算一遍向量。返回（条数，出错说明）。"""
+    任务 = config.读取任务("embed")
+    连接 = index.连接索引()
+    try:
+        行们 = 连接.execute(
+            "SELECT id, did, body FROM entries WHERE private = 0 ORDER BY ts"
+        ).fetchall()
+        if not 行们:
+            return 0, "没有可建向量的记录"
+        try:
+            index.清空向量(连接)
+            向量们, _token = llm.嵌入([f"{行['did']} {行['body']}" for 行 in 行们])
+        except (llm.模型错误, llm.网络错误, config.配置错误) as 错误:
+            return 0, f"失败（{错误}）"
+        模型名 = 任务.model if 任务 else "?"
+        for 行, 向量 in zip(行们, 向量们):
+            index.写向量(连接, 行["id"], 向量, 模型名)
+        return len(行们), ""
+    finally:
+        连接.close()
 
 
 # ── 内部函数 ──────────────────────────────────────────────────
