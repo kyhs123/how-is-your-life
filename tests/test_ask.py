@@ -97,3 +97,20 @@ def test_回答里没有真实日期也会被点出来(临时工作区, monkeypa
 
     结果 = 运行.invoke(cli.app, ["ask", "我又卡住了"])
     assert "日期" in 结果.output
+
+
+def test_上下文用大学期间这类人话时间也算引用了真实时间(临时工作区, monkeypatch):
+    """补记的旧事只知道「大学期间」，回答里提到它就够了——不能只认 YYYY-MM-DD。"""
+    运行.invoke(cli.app, ["add", "独立完成 STM32 竞速小车软硬件", "--when", "大学期间", "--demo"])
+
+    def 假调用(*a, **k):
+        return llm.模型回复(
+            文本="大学期间你自己画 PCB 把小车焊起来了，这次要不要也先只做最小的一块？",
+            输入token=10, 输出token=5, 模型名="测试", 降级到第几级=3,
+        )
+
+    monkeypatch.setattr(llm, "调用", 假调用)
+
+    结果 = 运行.invoke(cli.app, ["ask", "我能行吗"])
+    assert 结果.exit_code == 0
+    assert "没做到" not in 结果.output, 结果.output

@@ -39,6 +39,7 @@ class 假任务:
     model: str = "测试模型"
     max_tokens: int = 100
     timeout: int = 5
+    temperature: float = 0.2
     batch: int = 1
     json模式: str | None = None
 
