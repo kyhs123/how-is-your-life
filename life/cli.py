@@ -26,6 +26,7 @@ from life import goal as goal模块
 from life import portrait as portrait模块
 from life import promote as promote模块
 from life import review as review模块
+from life import server as server模块
 
 app = typer.Typer(
     add_completion=False,
@@ -572,6 +573,27 @@ def demo(
     typer.echo("  试试：life ask \"我好累，感觉什么都没做成\"")
     typer.echo("        life goal show 1")
     typer.echo("        life board --open")
+
+
+# ── life server（本机网页界面，第 5 周）───────────────────────
+
+
+@app.command()
+def server(
+    端口: int = typer.Option(8770, "--port", help="监听端口（只绑 127.0.0.1）"),
+    打开: bool = typer.Option(False, "--open", help="启动后用浏览器打开"),
+):
+    """启动本机网页界面：新建/修改目标、确认待确认的记录。
+
+    只做这两件事。只绑 127.0.0.1，局域网里的其它机器连不上。
+    """
+    try:
+        typer.echo("· 正在准备…")
+        server模块.启动(端口, 打开浏览器=打开)
+    except OSError as 错误:
+        typer.echo(f"× 端口 {端口} 用不了（可能被别的程序占了）：{错误}")
+        typer.echo("  换个端口：life server --port 8771")
+        raise typer.Exit(1) from 错误
 
 
 # ── life reindex ──────────────────────────────────────────────

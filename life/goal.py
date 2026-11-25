@@ -103,6 +103,42 @@ def 改状态(标识: str, 新状态: str, *, 原因: str = "") -> dict:
     return 目标
 
 
+def 更新目标(
+    标识: str,
+    *,
+    标题: str | None = None,
+    期限: str | None = None,
+    为什么: str | None = None,
+    截止: str | None = None,
+    状态: str | None = None,
+) -> dict:
+    """改目标。id 和文件名保持不变（改了标题也不改名，免得记录里的关联断掉）。"""
+    目标 = dict(找目标(标识))
+
+    if 标题 is not None and 标题.strip():
+        目标["title"] = 标题.strip()
+    if 期限 is not None:
+        if 期限 not in store.期限取值:
+            raise 目标错误(f"期限只能是 {list(store.期限取值)}。")
+        目标["horizon"] = 期限
+    if 为什么 is not None:
+        目标["why"] = 为什么.strip()
+    if 截止 is not None:
+        目标["due"] = 截止.strip()
+    if 状态 is not None:
+        if 状态 not in store.目标状态取值:
+            raise 目标错误(f"状态只能是 {list(store.目标状态取值)}。")
+        目标["status"] = 状态
+
+    store.写目标(目标)
+    连接 = index.连接索引()
+    try:
+        index.写入目标(连接, 目标)
+    finally:
+        连接.close()
+    return 目标
+
+
 # ── 证据（§4.5 的「进度展示用证据视图」）─────────────────────
 
 

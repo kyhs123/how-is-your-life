@@ -296,6 +296,31 @@ def 遍历条目() -> list[Path]:
     return sorted(目录.rglob("*.md"))
 
 
+def 找条目文件(记录id: str) -> Path | None:
+    """按 id 找那条记录的文件（id 就是文件名）。"""
+    目录 = config.vault目录() / "now"
+    if not 目录.exists():
+        return None
+    for 路径 in 目录.rglob(f"{记录id}.md"):
+        return 路径
+    return None
+
+
+def 改条目状态(记录id: str, 新状态: str) -> dict:
+    """改一条记录的状态（网页界面那个「确认」按钮用的）。"""
+    if 新状态 not in 状态取值:
+        raise 存储错误(f"状态只能是 {list(状态取值)}。")
+
+    路径 = 找条目文件(记录id)
+    if 路径 is None:
+        raise 存储错误(f"找不到记录 {记录id}。")
+
+    条目 = 读条目(路径)
+    条目["status"] = 新状态
+    写条目(条目)
+    return 条目
+
+
 # ── markdown 的格式与解析 ─────────────────────────────────────
 
 
