@@ -170,7 +170,9 @@ def _发一次(
     请求体: dict = {
         "model": 任务.model,
         "messages": 消息,
-        "temperature": 0.2,  # 抽取要稳定，不要文采
+        # 温度按任务配：抽取要稳定（0.2），对话要有温度（0.7）。
+        # 写死 0.2 会让对话像在读台账——实测过。
+        "temperature": 任务.temperature,
         "max_tokens": 任务.max_tokens,
     }
 

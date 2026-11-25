@@ -64,6 +64,7 @@ class 任务配置:
     batch: int = 1
     max_tokens: int = 2000
     timeout: int = 60
+    temperature: float = 0.2
     # 思考型模型（deepseek-v4-pro / v4.1-flash）会把 token 大量花在「想」上，
     # 上限给小了，正文一个字都出不来（finish_reason=length、content 为空）。
     # 所以每个任务可以单独调这个上限。
@@ -118,6 +119,7 @@ def 读取任务(任务名: str) -> 任务配置 | None:
         batch=int(任务表.get("batch", 1)),
         max_tokens=int(任务表.get("max_tokens", 2000)),
         timeout=int(任务表.get("timeout", 60)),
+        temperature=float(任务表.get("temperature", 0.2)),
     )
 
 
