@@ -143,17 +143,21 @@ def retry(演示: bool = typer.Option(False, "--demo", help="用假模型演示�
 
         暂存图 = vault / 输入["图片"] if 输入.get("图片") else None
         if 暂存图 is not None and not 暂存图.exists():
-            暂存图 = None  # 图片已经被清掉了，按纯文字重试
+            暂存图 = None  # 文件已经被清掉了，按纯文字重试
+        # 只有图片才走视觉通道；文档的文字在第一次就抽好存在原文里了
+        图片参数 = 暂存图 if 输入.get("kind") == "image" else None
 
         try:
-            路径们, 结果 = recorder模块.抽取并保存(输入, 用假模型=演示, 图片=暂存图, 提示=typer.echo)
+            路径们, 结果 = recorder模块.抽取并保存(
+                输入, 用假模型=演示, 图片=图片参数, 提示=typer.echo
+            )
         except (llm.模型错误, extract.抽取错误, index.索引错误, config.配置错误) as 错误:
             typer.echo(f"× {路径.name} 还是不行：{错误}")
             失败 += 1
             continue
 
         store.删inbox(路径)
-        recorder模块.处理图片(输入, vault, 暂存图, 结果, 提示=typer.echo)
+        recorder模块.处理文件(输入, vault, 暂存图, 结果, 提示=typer.echo)
         extract.写缓存(输入.get("内容指纹", ""), 结果, 路径们)
         for 一条 in 路径们:
             typer.echo(f"√ 记下了：vault/{str(一条.relative_to(vault)).replace(chr(92), '/')}")
