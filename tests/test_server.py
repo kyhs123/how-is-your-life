@@ -823,3 +823,32 @@ def test_有没抽成的记录时首页给补抽按钮(临时工作区, 站):
     _, 页面, _ = 请求(站, "GET", "/")
     assert "还没抽成" in 页面
     assert 'action="/jobs/retry"' in 页面
+
+
+def test_记录页会说明现在只显示待确认(临时工作区, 站):
+    """坑过：链接带 ?状态=needs_review 但页面不说，看起来像「只有一条记录」。"""
+    造记录("一条待确认的", 状态="needs_review")
+    造记录("一条正常的")
+
+    _, 页面, _ = 请求(站, "GET", 查询("/entries", 状态="needs_review"))
+    assert "只显示" in 页面 and "待确认" in 页面
+    assert "看全部" in 页面
+
+    _, 全部, _ = 请求(站, "GET", "/entries")
+    assert "共 2 条" in 全部
+
+
+def test_可以一键全部确认(临时工作区, 站):
+    一号 = 造记录("第一条待确认", 状态="needs_review")
+    二号 = 造记录("第二条待确认", 状态="needs_review")
+    正常 = 造记录("本来就不用确认")
+
+    状态, _, _ = 请求(站, "POST", "/entries/settle-all", 表单={"token": 令牌(站)})
+    assert 状态 in (200, 303)
+
+    assert store.读条目(store.找条目文件(一号))["status"] == "settled"
+    assert store.读条目(store.找条目文件(二号))["status"] == "settled"
+    assert store.读条目(store.找条目文件(正常))["status"] == "settled"
+
+    _, 首页, _ = 请求(站, "GET", "/")
+    assert "等你确认" not in 首页

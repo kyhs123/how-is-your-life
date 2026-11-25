@@ -599,6 +599,8 @@ class 处理器(BaseHTTPRequestHandler):
 
         if 路径 == "/add":
             self._记一条(表单, 文件们)
+        elif 路径 == "/entries/settle-all":
+            self._全部确认()
         elif 路径.startswith("/entries/") and 路径.endswith("/settle"):
             self._确认(urllib.parse.unquote(路径[len("/entries/") : -len("/settle")]))
         elif 路径.startswith("/entries/"):
@@ -723,6 +725,17 @@ class 处理器(BaseHTTPRequestHandler):
 
         _写回索引(条目)
         self._跳(f"/entries/{urllib.parse.quote(记录id)}")
+
+    def _全部确认(self) -> None:
+        """把待确认的全部标成已定稿（只改状态，不动内容）。"""
+        待 = [e for e in _全部条目() if e["status"] == "needs_review"]
+        for 条目 in 待:
+            try:
+                新的 = store.改条目状态(条目["id"], "settled")
+            except store.存储错误:
+                continue
+            _写回索引(新的)
+        self._跳("/")
 
     def _确认(self, 记录id: str) -> None:
         try:

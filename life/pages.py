@@ -136,7 +136,12 @@ def 今天(
 
     if 待确认数:
         块.append(
-            f'<p class="notice">有 <b>{待确认数}</b> 条记录等你确认 → <a href="/entries?状态=needs_review">去确认</a></p>'
+            f'<p class="notice">有 <b>{待确认数}</b> 条记录等你确认 → '
+            f'<a href="/entries?状态=needs_review">去确认</a>'
+            " ｜ "
+            '<form method="post" action="/entries/settle-all" class="inline">'
+            f'<input type="hidden" name="token" value="{e(令牌)}">'
+            '<button type="submit" class="btn plain">全部确认</button></form></p>'
         )
 
     块.append('<section><h2>最近七天</h2>')
@@ -195,6 +200,15 @@ def 记录列表(
         for 键, 名 in [("", "全部"), (0, "接触"), (1, "复现"), (2, "产出"), (3, "能讲")]
     )
     块.append(f'<p class="filters">{部分链}</p><p class="filters">{档位链}</p>')
+    if 筛选.get("状态") == "needs_review":
+        块.append(
+            '<p class="notice">现在只显示「待确认」的记录。'
+            f'<a href="/entries">看全部</a>'
+            " ｜ "
+            '<form method="post" action="/entries/settle-all" class="inline">'
+            f'<input type="hidden" name="token" value="{e(令牌)}">'
+            '<button type="submit" class="btn plain">全部确认</button></form></p>'
+        )
 
     if not 分组:
         块.append(空状态("这个条件下没有记录。换个筛选，或者去记一条。"))
