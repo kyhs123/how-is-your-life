@@ -28,6 +28,9 @@ from life import config
 结果取值 = ("done", "stuck", "dropped")  # outcome：做完 / 卡住 / 放弃
 状态取值 = ("pending", "settled", "needs_review")  # status：待处理 / 已定稿 / 待人工看
 
+# 正文上限（DESIGN.md §5.2 第 4 条）。extract.py 也引用这一个常量，别再各写一份。
+正文上限 = 60
+
 # 北京时间。项目是给自己用的，先不做多时区。
 中国时区 = timezone(timedelta(hours=8))
 
@@ -298,6 +301,7 @@ def 遍历条目() -> list[Path]:
 
 def 找条目文件(记录id: str) -> Path | None:
     """按 id 找那条记录的文件（id 就是文件名）。"""
+    检查记录id(记录id)
     目录 = config.vault目录() / "now"
     if not 目录.exists():
         return None
@@ -306,17 +310,65 @@ def 找条目文件(记录id: str) -> Path | None:
     return None
 
 
+# 记录 id 只允许这些字符。网页会把 id 拼进路径和 URL，
+# 所以必须挡住 `/`、`..` 之类的东西（否则就能越出 vault/ 读别的文件）。
+记录id允许 = re.compile(r"^[0-9A-Za-z_\-\u4e00-\u9fff]{1,80}$")
+
+
+def 检查记录id(记录id: str) -> None:
+    if not 记录id or not 记录id允许.match(记录id):
+        raise 存储错误(f"记录 id 不合法：{记录id!r}")
+
+
 def 改条目状态(记录id: str, 新状态: str) -> dict:
     """改一条记录的状态（网页界面那个「确认」按钮用的）。"""
-    if 新状态 not in 状态取值:
-        raise 存储错误(f"状态只能是 {list(状态取值)}。")
+    return 改条目字段(记录id, status=新状态)
 
+
+def 改条目字段(
+    记录id: str,
+    *,
+    did: str | None = None,
+    level: int | None = None,
+    outcome: str | None = None,
+    status: str | None = None,
+) -> dict:
+    """改一条记录的四个字段（网页「单条」页面用的）。
+
+    只允许改这四个。`private` 不能在这里改——那会改变对用户的隐私承诺，
+    误操作的代价太大（详见 docs/WEBUI.md §2.3）。
+    """
     路径 = 找条目文件(记录id)
     if 路径 is None:
         raise 存储错误(f"找不到记录 {记录id}。")
 
     条目 = 读条目(路径)
-    条目["status"] = 新状态
+
+    if did is not None:
+        句子 = " ".join(did.split())
+        if not 句子:
+            raise 存储错误("那句话不能空着。")
+        if len(句子) > 正文上限:
+            raise 存储错误(f"那句话有 {len(句子)} 个字，超过 {正文上限} 字上限。")
+        条目["did"] = 句子
+        if not 条目["body"]:
+            条目["body"] = 句子
+
+    if level is not None:
+        if level not in (0, 1, 2, 3):
+            raise 存储错误(f"档位只能是 0/1/2/3，你给的是 {level}。")
+        条目["level"] = level
+
+    if outcome is not None:
+        if outcome not in 结果取值:
+            raise 存储错误(f"结果只能是 {list(结果取值)}。")
+        条目["outcome"] = outcome
+
+    if status is not None:
+        if status not in 状态取值:
+            raise 存储错误(f"状态只能是 {list(状态取值)}。")
+        条目["status"] = status
+
     写条目(条目)
     return 条目
 

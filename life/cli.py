@@ -25,6 +25,7 @@ from life import board as board模块
 from life import goal as goal模块
 from life import portrait as portrait模块
 from life import promote as promote模块
+from life import recorder as recorder模块
 from life import review as review模块
 from life import server as server模块
 
@@ -56,81 +57,35 @@ def add(
         typer.echo('× 你什么都没输入。\n  用法：life add "今天做了什么"\n        life add --image 图片路径 "说明"')
         raise typer.Exit(1)
 
-    if 图片 is not None and not 图片.exists():
-        typer.echo(f"× 找不到这张图：{图片}")
-        raise typer.Exit(1)
-
-    vault = store.确保vault就绪()
-    此刻 = store.现在()
-    输入id, _ = store.分配id(此刻)
-
-    # ① 图片先复制进 vault（C1：文件必须在仓库内；用户可能马上删掉原图）
-    暂存图: Path | None = None
-    if 图片 is not None:
-        try:
-            暂存图 = store.复制图片到暂存(图片, 输入id)
-        except OSError as 错误:
-            typer.echo(f"× 复制图片失败：{错误}")
-            raise typer.Exit(1) from 错误
-
-    # ② 算指纹，看看是不是重复提交（§4.1 幂等）
-    指纹 = store.内容哈希(文本, 暂存图)
-    已有 = extract.读缓存(指纹)
-    if 已有 and any(
-        (vault / 相对路径).exists() for 相对路径 in 已有.get("entry_paths", [])
-    ):
-        typer.echo("· 这条之前已经记过了，不重复存：")
-        for 相对路径 in 已有.get("entry_paths", []):
-            typer.echo(f"    vault/{相对路径}")
-        if 暂存图 is not None:
-            暂存图.unlink(missing_ok=True)
-        return
-
-    # ③ 先落盘（C5）。这一行执行完，这条内容就不会丢了。
-    输入 = {
-        "格式": 1,
-        "id": 输入id,
-        "ts": store.时间文本(此刻),
-        "kind": "image" if 暂存图 else "text",
-        "原文": 文本,
-        "部分": "emotion" if 情感 else "record",
-        "private": 私密,
-        "keep_image": 保留图片,
-        "图片": str(暂存图.relative_to(vault)).replace("\\", "/") if 暂存图 else "",
-        "图片原名": 图片.name if 图片 else "",
-        "内容指纹": 指纹,
-        "尝试次数": 0,
-        "最后错误": "",
-    }
-    收件路径 = store.写inbox(输入)
-    typer.echo(f"· 已存好：vault/inbox/{收件路径.name}")
-
     if 演示:
         typer.echo("· 这次用的是假模型（--demo），不会真的调用 AI。")
 
-    # ④ 抽取（可能失败，失败也不影响上面那条已经存好的记录）
-    try:
-        路径们, 结果 = _抽取并保存(输入, 用假模型=演示)
-    except llm.网络错误 as 错误:
-        typer.echo(f"· 抽取没成功（网络问题），但记录已经存好了。\n  {错误}")
+    结果 = recorder模块.记录一条(
+        文本,
+        图片=图片,
+        情感=情感,
+        私密=私密,
+        保留图片=保留图片,
+        用假模型=演示,
+        提示=typer.echo,
+    )
+
+    状态 = 结果["状态"]
+    if 状态 == "输入有问题":
+        typer.echo(f"× {结果['错误']}")
+        raise typer.Exit(1)
+    if 状态 == "重复":
+        return
+    if 状态 == "抽取失败":
+        typer.echo(f"· 抽取没成功，但记录已经存好了。\n  {结果['错误']}")
         typer.echo("  联网之后跑 `life retry` 就能补上。")
         return
-    except config.配置错误 as 错误:
-        typer.echo(f"× {错误}")
-        typer.echo(f"  你的输入已经存好了：vault/inbox/{收件路径.name}")
-        raise typer.Exit(1) from 错误
-    except (llm.模型错误, extract.抽取错误, index.索引错误) as 错误:
-        typer.echo(f"· 抽取没成功，但记录已经存好了。\n  {错误}")
-        typer.echo("  排查完再跑 `life retry` 即可。")
-        return
+    if 状态 == "配置错误":
+        typer.echo(f"× {结果['错误']}")
+        if 结果["收件"] is not None:
+            typer.echo(f"  你的输入已经存好了：vault/inbox/{结果['收件'].name}")
+        raise typer.Exit(1)
 
-    # ⑤ 收尾：清掉待抽取文件、处理图片、写缓存
-    store.删inbox(收件路径)
-    _处理图片(输入, vault, 暂存图, 结果)
-    extract.写缓存(指纹, 结果, 路径们)
-
-    for 路径 in 路径们:
-        typer.echo(f"√ 记下了：vault/{str(路径.relative_to(vault)).replace(chr(92), '/')}")
     typer.echo("  （想看这条长什么样，用记事本打开上面那个文件。）")
 
 
@@ -162,14 +117,14 @@ def retry(演示: bool = typer.Option(False, "--demo", help="用假模型演示�
             暂存图 = None  # 图片已经被清掉了，按纯文字重试
 
         try:
-            路径们, 结果 = _抽取并保存(输入, 用假模型=演示, 图片=暂存图)
+            路径们, 结果 = recorder模块.抽取并保存(输入, 用假模型=演示, 图片=暂存图, 提示=typer.echo)
         except (llm.模型错误, extract.抽取错误, index.索引错误, config.配置错误) as 错误:
             typer.echo(f"× {路径.name} 还是不行：{错误}")
             失败 += 1
             continue
 
         store.删inbox(路径)
-        _处理图片(输入, vault, 暂存图, 结果)
+        recorder模块.处理图片(输入, vault, 暂存图, 结果, 提示=typer.echo)
         extract.写缓存(输入.get("内容指纹", ""), 结果, 路径们)
         for 一条 in 路径们:
             typer.echo(f"√ 记下了：vault/{str(一条.relative_to(vault)).replace(chr(92), '/')}")
@@ -656,77 +611,6 @@ def _重建向量() -> tuple[int, str]:
 
 
 # ── 内部函数 ──────────────────────────────────────────────────
-
-
-def _抽取并保存(
-    输入: dict, *, 用假模型: bool, 图片: Path | None = None
-) -> tuple[list[Path], dict]:
-    """一次输入 → 抽取 → 写成 markdown → 进索引。
-
-    返回（写出来的文件路径列表，抽取结果）。抽取结果里有 OCR 全文，
-    处理图片的时候要用。
-    """
-    vault = config.vault目录()
-
-    if 图片 is None and 输入.get("图片"):
-        可能 = vault / 输入["图片"]
-        图片 = 可能 if 可能.exists() else None
-
-    结果 = extract.抽取(
-        输入.get("原文", ""),
-        部分=输入.get("部分", "record"),
-        图片路径=图片,
-        原文文件名=输入.get("图片原名", ""),
-        私密=bool(输入.get("private")),
-        用假模型=用假模型,
-        内容指纹=输入.get("内容指纹", ""),
-    )
-
-    if 结果["status"] == "needs_review" and 结果.get("备注"):
-        typer.echo(f"· {结果['备注']}")
-
-    连接 = index.连接索引()
-    try:
-        时间 = datetime.fromisoformat(输入["ts"])
-        路径们: list[Path] = []
-        for 一条 in 结果["entries"]:
-            记录id, 时间 = store.分配id(时间)
-            条目 = store.新建条目(
-                id=记录id,
-                ts=store.时间文本(时间),
-                private=bool(输入.get("private")),
-                status=结果["status"],
-                **一条,
-            )
-            路径 = store.写条目(条目)
-            index.写入条目(连接, 条目)
-            路径们.append(路径)
-        return 路径们, 结果
-    finally:
-        连接.close()
-
-
-def _处理图片(输入: dict, vault: Path, 暂存图: Path | None, 结果: dict) -> None:
-    """按设计处理图片：OCR 全文留下，原图删掉（除非用户说了 --keep-image）。"""
-    if 暂存图 is None:
-        return
-
-    # OCR 全文和摘要写到 vault/media/ —— 这是那张图唯一的「原话」（§5.5）
-    if 输入.get("kind") == "image":
-        正文 = (
-            f"# 图片原文（OCR）\n\n"
-            f"{结果.get('ocr_text') or '（没有识别出文字）'}\n\n"
-            f"# 摘要\n\n{结果.get('digest') or '（没有摘要）'}\n"
-        )
-        (vault / "media" / f"{输入['id']}.md").write_text(正文, encoding="utf-8")
-
-    if 输入.get("keep_image"):
-        目标 = vault / "media" / 暂存图.name
-        目标.parent.mkdir(parents=True, exist_ok=True)
-        暂存图.replace(目标)
-        typer.echo(f"· 原图按你的要求留下了：vault/media/{目标.name}")
-    else:
-        暂存图.unlink(missing_ok=True)
 
 
 def main() -> None:

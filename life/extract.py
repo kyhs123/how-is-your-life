@@ -78,7 +78,7 @@ from life import config, fake_model, index, llm, store
     "required": ["entries"],
 }
 
-正文上限 = 60  # DESIGN.md §5.2 第 4 条
+正文上限 = store.正文上限  # DESIGN.md §5.2 第 4 条（唯一定义在 store.py）
 
 
 class 抽取错误(Exception):
