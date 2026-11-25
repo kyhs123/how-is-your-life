@@ -22,6 +22,8 @@ import typer
 from life import config, extract, index, llm, retrieve, store
 from life import ask as ask模块
 from life import board as board模块
+from life import goal as goal模块
+from life import promote as promote模块
 
 app = typer.Typer(
     add_completion=False,
@@ -299,6 +301,183 @@ def board(
         webbrowser.open(文件.resolve().as_uri())
 
 
+# ── life goal（目标，第 3 周）─────────────────────────────────
+
+目标app = typer.Typer(
+    help="目标（人生规划）：立目标、看证据分布。不做百分比，不催进度。",
+    no_args_is_help=True,
+)
+app.add_typer(目标app, name="goal")
+
+
+@目标app.command("add")
+def goal_add(
+    标题: str = typer.Argument(..., help="目标的名字，比如 \"学完后端基础\""),
+    期限: str = typer.Option(
+        "term", "--horizon", help="short（2周~1月）/ term（一学期~半年）/ long（1~3年）"
+    ),
+    为什么: str = typer.Option("", "--why", help="为什么想要它（将来你自己会想看这句）"),
+    截止: str = typer.Option("", "--due", help="截止日期，形如 2027-01-15"),
+):
+    """立一个目标。"""
+    try:
+        目标 = goal模块.建目标(标题, 期限=期限, 为什么=为什么, 截止=截止)
+    except store.存储错误 as 错误:
+        typer.echo(f"× {错误}")
+        raise typer.Exit(1) from 错误
+    except goal模块.目标错误 as 错误:
+        typer.echo(f"× {错误}")
+        raise typer.Exit(1) from 错误
+
+    typer.echo(f"√ 立好了：{目标['title']}")
+    typer.echo(f"  文件：vault/goals/{目标['id']}.md")
+    typer.echo("  记录里写的事会自动挂到目标名下（前提是抽取时认出了这个目标）。")
+
+
+@目标app.command("list")
+def goal_list():
+    """列出所有目标。"""
+    目标们 = goal模块.全部目标()
+    if not 目标们:
+        typer.echo('还没有目标。立一个：')
+        typer.echo('  life goal add "学完后端基础" --horizon term --why "想自己能做一个网站"')
+        return
+    for 序号, 目标 in enumerate(目标们, start=1):
+        typer.echo(goal模块.一行概览(序号, 目标))
+    typer.echo("")
+    typer.echo("看某张证据卡：life goal show 1")
+
+
+@目标app.command("show")
+def goal_show(标识: str = typer.Argument(..., help="目标的编号、名字或它的一部分")):
+    """看一个目标的证据分布。"""
+    try:
+        目标 = goal模块.找目标(标识)
+    except goal模块.目标错误 as 错误:
+        typer.echo(f"× {错误}")
+        raise typer.Exit(1) from 错误
+
+    typer.echo("")
+    typer.echo(goal模块.渲染卡片(目标))
+
+
+@目标app.command("done")
+def goal_done(标识: str = typer.Argument(..., help="目标的编号或名字")):
+    """标记目标完成。你说完成就是完成，系统不校验证据——但卡片会照实展示分布。"""
+    try:
+        目标 = goal模块.改状态(标识, "done")
+    except goal模块.目标错误 as 错误:
+        typer.echo(f"× {错误}")
+        raise typer.Exit(1) from 错误
+
+    typer.echo(f"√ 标记完成：{目标['title']}")
+    typer.echo("")
+    typer.echo(goal模块.渲染卡片(目标))
+
+
+@目标app.command("stop")
+def goal_stop(
+    标识: str = typer.Argument(..., help="目标的编号或名字"),
+    原因: str = typer.Option("", "--reason", help="为什么不做了（写下来，将来有用）"),
+):
+    """停下目标。想换方向不是失败。"""
+    try:
+        目标 = goal模块.改状态(标识, "stopped", 原因=原因)
+    except goal模块.目标错误 as 错误:
+        typer.echo(f"× {错误}")
+        raise typer.Exit(1) from 错误
+    typer.echo(f"√ 已停：{目标['title']}" + (f"（原因记下了：{原因}）" if 原因 else ""))
+
+
+# ── life settle / life promote（固化与晋升，第 3 周）───────────
+
+
+@app.command()
+def settle(
+    周: bool = typer.Option(False, "--week", help="按最近 7 天归纳（默认就是这个）"),
+    天数: int = typer.Option(7, "--days", help="看最近几天的记录"),
+):
+    """把最近这一段的记录归纳成主题，够条件的写成「晋升提名」。
+
+    注意：这一步只提名，不动你的记录。要不要晋升，用 `life promote` 一条条决定。
+    """
+    try:
+        结果 = promote模块.提名(天数=天数)
+    except promote模块.晋升错误 as 错误:
+        typer.echo(f"× {错误}")
+        raise typer.Exit(1) from 错误
+
+    if 结果["说明"]:
+        typer.echo(f"· {结果['说明']}")
+        return
+
+    typer.echo(f"· 找到 {结果['主题数']} 个主题。")
+
+    for 记录 in 结果["提名"]:
+        typer.echo("")
+        typer.echo(f"  √ 提名：{记录['标题']} → 章节")
+        typer.echo(f"    依据：{promote模块._依据文字(记录)}")
+        if 记录.get("摘要"):
+            typer.echo(f"    摘要：{记录['摘要']}")
+
+    for 记录 in 结果["没提名"]:
+        typer.echo("")
+        typer.echo(f"  · 暂不提名：{记录['标题']}")
+        typer.echo(f"    原因：{记录['原因']}")
+
+    if 结果["提名"]:
+        typer.echo("")
+        typer.echo("要确认这些提名：life promote")
+    elif not 结果["没提名"]:
+        typer.echo("· 这一段里没有值得提名的主题。")
+
+
+@app.command()
+def promote(
+    全部是: bool = typer.Option(False, "--yes", help="全部确认，不一条条问"),
+):
+    """处理晋升提名：要 / 不要。绝不自动晋升。"""
+    提名们 = promote模块.待确认提名()
+    if not 提名们:
+        typer.echo("· 没有等你处理的提名。先跑一次 `life settle --week`。")
+        return
+
+    typer.echo(f"· 有 {len(提名们)} 条提名等你决定。")
+    晋升了 = 0
+    拒绝了 = 0
+
+    for 记录 in 提名们:
+        标题 = 记录["标题"]
+        typer.echo("")
+        typer.echo(f"── {标题} " + "─" * 20)
+        if 记录.get("摘要"):
+            typer.echo(f"   摘要：{记录['摘要']}")
+        typer.echo(f"   依据：{promote模块._依据文字(记录)}")
+        typer.echo(f"   涉及 {记录['条数']} 条记录，最高 {记录['最高档']} 档")
+
+        if 全部是:
+            要 = True
+        else:
+            要 = typer.confirm("   要把它升成章节吗", default=False)
+        if not 要:
+            要 = False
+
+        try:
+            if 要:
+                结果 = promote模块.确认(标题)
+                晋升了 += 1
+                typer.echo(f"   √ 已成为章节「{结果['章节']['id']}」，回填了 {len(结果['回填'])} 条记录")
+            else:
+                promote模块.拒绝(标题)
+                拒绝了 += 1
+                typer.echo("   · 拒绝了，以后不再提这一条")
+        except promote模块.晋升错误 as 错误:
+            typer.echo(f"   × {错误}")
+
+    typer.echo("")
+    typer.echo(f"· 完成：晋升 {晋升了} 条，拒绝 {拒绝了} 条。记录都在 vault/changelog.md 里。")
+
+
 # ── life reindex ──────────────────────────────────────────────
 
 @app.command()
@@ -311,6 +490,9 @@ def reindex(
     结果 = index.重建索引()
     typer.echo(
         f"· 扫描 {结果['扫描']} 个记录文件，成功写入索引 {结果['成功']} 条。"
+    )
+    typer.echo(
+        f"· 顺带重建：章节 {结果['章节']} 个、目标 {结果['目标']} 个、底色 {结果['底色']} 条。"
     )
     if 结果["失败"]:
         typer.echo(f"· 有 {len(结果['失败'])} 个文件没读进来（其它文件照常建好了）：")
