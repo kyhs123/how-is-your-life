@@ -12,7 +12,7 @@
 |---|---|
 | 1 | ✅ 录入 + 抽取 + 索引 + 只读看板 |
 | 2 | ✅ **三路检索 + `life ask`**（本项目的验证点：它能不能提起你忘掉的事） |
-| 3 | 目标 + 证据视图 + 晋升 |
+| 3 | ✅ 目标 + 证据视图 + 固化（`settle`）+ 晋升（`promote`） |
 | 4 | 情感记录 + 画像 + 回顾 + 完整 README + demo 数据 |
 | 5 | 可编辑的网页界面 |
 
@@ -55,6 +55,14 @@ python -m venv .venv
 
 # 6. 只看它翻出了哪些旧记录，不调对话模型（省钱、方便排查）
 .\.venv\Scripts\life.exe ask "OAuth" --dry-run
+
+# 7. 立一个目标，看它的证据分布（不给你百分比）
+.\.venv\Scripts\life.exe goal add "学完后端基础" --horizon term --why "想自己能做一个网站"
+.\.venv\Scripts\life.exe goal show 1
+
+# 8. 让散着的记录自己长出主线（它只提名，认不认你说了算）
+.\.venv\Scripts\life.exe settle --week
+.\.venv\Scripts\life.exe promote
 ```
 
 如果屏幕上中文变成乱码，先敲一次 `chcp 65001` 再试。
