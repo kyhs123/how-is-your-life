@@ -190,7 +190,7 @@ def _发一次(
 def 配置错误_说明() -> config.配置错误:
     """providers.yaml 没配好时，给一段能照着做的说明。"""
     return config.配置错误(
-        "还没有配置模型接口，所以没法抽取。\n"
+        "还没有配置模型接口，所以现在没法调 AI。\n"
         "\n"
         "两个办法：\n"
         "  1. 想先看看流程能跑通：在命令后面加 --demo，用假模型演示，不联网不花钱。\n"
@@ -199,7 +199,103 @@ def 配置错误_说明() -> config.配置错误:
         "     b. 把 .env.example 复制成 .env，填上 CHAT_API_KEY=你的密钥\n"
         "     c. 关掉终端重新开一个，让环境变量生效\n"
         "\n"
-        f"你说的文件应该在这些位置：\n"
+        f"该放的文件位置：\n"
         f"  {config.providers配置文件()}\n"
         f"  {config.工作区根目录() / '.env'}"
+    )
+
+
+# ── 向量（§4.3 第一路检索要用）─────────────────────────────────
+
+
+def 能向量() -> tuple[bool, str]:
+    """能不能做向量检索。返回（能不能，不能的原因）。
+
+    这个函数不抛异常——因为「没有向量接口」是允许的状态：
+    检索会自动降级成两路，而不是整个 `life ask` 罢工。
+    """
+    try:
+        任务 = config.读取任务("embed")
+    except config.配置错误 as 错误:
+        return False, str(错误)
+
+    if 任务 is None:
+        return False, "providers.yaml 里没有配置 tasks.embed（向量接口）"
+    if not 任务.base_url:
+        return False, "tasks.embed 指向的 provider 没写 base_url"
+    try:
+        任务.取密钥()
+    except config.配置错误:
+        return False, f"向量接口的密钥没配（.env 里的 {任务.api_key_env} 是空的）"
+    return True, ""
+
+
+def 嵌入(文本们: list[str]) -> tuple[list[list[float]], int]:
+    """把一批文本变成向量。返回（向量列表，消耗的 token）。
+
+    接口用的是 OpenAI 兼容的 /embeddings：
+        POST {"model": "...", "input": ["...", "..."]}
+        →    {"data": [{"index": 0, "embedding": [...]}, ...], "usage": {...}}
+    """
+    任务 = config.读取任务("embed")
+    if 任务 is None:
+        raise 配置错误_向量()
+    密钥 = 任务.取密钥()
+
+    全部向量: list[list[float]] = []
+    总token = 0
+    批量 = max(1, min(int(任务.batch or 8), 64))  # 一次最多 64 条，别把接口打挂
+
+    for 起点 in range(0, len(文本们), 批量):
+        这一批 = 文本们[起点 : 起点 + 批量]
+        原始 = _发嵌入请求(任务, 密钥, 这一批)
+        数据 = 原始.get("data") or []
+        # 接口不保证按顺序返回，用 index 排一下
+        按序 = sorted(数据, key=lambda x: x.get("index", 0))
+        全部向量.extend([list(x.get("embedding") or []) for x in 按序])
+        用量 = 原始.get("usage") or {}
+        总token += int(用量.get("total_tokens") or 用量.get("prompt_tokens") or 0)
+
+    if len(全部向量) != len(文本们):
+        raise 模型错误(
+            f"向量接口还回来的条数不对：发过去 {len(文本们)} 条，回来 {len(全部向量)} 条。"
+        )
+    return 全部向量, 总token
+
+
+def _发嵌入请求(任务: config.任务配置, 密钥: str, 这一批: list[str]) -> dict:
+    地址 = f"{任务.base_url}/embeddings"
+    请求 = urllib.request.Request(
+        地址,
+        data=json.dumps({"model": 任务.model, "input": 这一批}, ensure_ascii=False).encode("utf-8"),
+        headers={"Content-Type": "application/json", "Authorization": f"Bearer {密钥}"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(请求, timeout=60) as 响应:
+            原始 = 响应.read().decode("utf-8")
+    except urllib.error.HTTPError as 错误:
+        详情 = 错误.read().decode("utf-8", errors="replace")
+        raise 模型错误(
+            f"向量接口返回错误（HTTP {错误.code}）。\n接口原话：{详情[:400]}"
+        ) from 错误
+    except (urllib.error.URLError, socket.timeout, TimeoutError) as 错误:
+        raise 网络错误(f"连不上向量接口（{任务.base_url}）：{错误}") from 错误
+
+    try:
+        return json.loads(原始)
+    except json.JSONDecodeError as 错误:
+        raise 模型错误(
+            f"向量接口返回的不是 JSON。前 200 个字：{原始[:200]}"
+        ) from 错误
+
+
+def 配置错误_向量() -> config.配置错误:
+    return config.配置错误(
+        "没有配置向量接口，所以没法做「按意思搜」。\n"
+        "\n"
+        "两个办法：\n"
+        "  1. 先按两路走（全文 + 结构）：生命令时不加 --vectors，检索会自动降级。\n"
+        "  2. 想用三路：在 providers.yaml 的 tasks.embed 里配一个支持 /embeddings 的接口\n"
+        "     （比如硅基流动的 BAAI/bge-m3），把 key 放进 .env 的 VEC_API_KEY。"
     )
