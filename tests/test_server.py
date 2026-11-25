@@ -700,3 +700,98 @@ def test_单条页可以改什么时候(临时工作区, 站):
     )
     assert 状态 in (200, 303), 页面
     assert store.读条目(store.找条目文件(编号))["when"] == "大一"
+
+
+# ── 后台任务：长任务也能点按钮（docs/WEBUI.md §2.6）────────────
+
+
+def _等任务(端口, 任务号, 最多秒: float = 6):
+    """轮询任务页，直到它不再是「正在跑」。"""
+    import time
+
+    for _ in range(int(最多秒 * 20)):
+        状态, 页面, _ = 请求(端口, "GET", f"/jobs/{任务号}")
+        if "正在跑" not in 页面:
+            return 状态, 页面
+        time.sleep(0.05)
+    return 状态, 页面
+
+
+def test_章节页有归纳按钮和提名处理(临时工作区, 站, monkeypatch):
+    from life import promote
+
+    monkeypatch.setattr(
+        promote,
+        "提名",
+        lambda **k: {"主题数": 1, "提名": [{"标题": "OAuth 调试", "摘要": "跨两个月", "条数": 3, "月份": ["2026-10", "2026-11"]}],
+                     "没提名": [], "说明": ""},
+    )
+    _, 页面, _ = 请求(站, "GET", "/chapters")
+    assert 'action="/jobs/settle"' in 页面
+    assert "归纳最近的记录" in 页面
+
+
+def test_点按钮能跑归纳任务(临时工作区, 站, monkeypatch):
+    from life import promote
+
+    monkeypatch.setattr(
+        promote,
+        "提名",
+        lambda **k: {"主题数": 2, "提名": [], "没提名": [], "说明": ""},
+    )
+    状态, _, 位置 = 请求(站, "POST", "/jobs/settle", 表单={"token": 令牌(站)})
+    assert 状态 == 303
+    assert 位置.startswith("/jobs/")
+
+    任务号 = 位置.rsplit("/", 1)[-1]
+    状态, 页面 = _等任务(站, 任务号)
+    assert 状态 == 200
+    assert "完成" in 页面
+    assert "找到 2 个主题" in 页面
+
+
+def test_任务失败时显示原因并能重试(临时工作区, 站, monkeypatch):
+    from life import portrait
+
+    def 炸(**k):
+        raise RuntimeError("模型不听话")
+
+    monkeypatch.setattr(portrait, "生成", 炸)
+
+    状态, _, 位置 = 请求(站, "POST", "/jobs/portrait", 表单={"token": 令牌(站)})
+    assert 状态 == 303
+    任务号 = 位置.rsplit("/", 1)[-1]
+
+    _, 页面 = _等任务(站, 任务号)
+    assert "模型不听话" in 页面
+    assert 'action="/jobs/portrait"' in 页面  # 重试按钮
+
+
+def test_画像页有生成按钮(临时工作区, 站):
+    _, 页面, _ = 请求(站, "GET", "/portrait")
+    assert 'action="/jobs/portrait"' in 页面
+    assert "生成" in 页面
+
+
+def test_设置页有重建索引按钮(临时工作区, 站):
+    _, 页面, _ = 请求(站, "GET", "/settings")
+    assert 'action="/jobs/reindex"' in 页面
+
+
+def test_认识不了的任务名给404(临时工作区, 站):
+    状态, 页面, _ = 请求(
+        站, "POST", "/jobs/" + urllib.parse.quote("乱写"), 表单={"token": 令牌(站)}
+    )
+    assert 状态 == 404
+    assert "没有这种任务" in 页面
+
+
+def test_同一个任务不会叠着跑(临时工作区, 站, monkeypatch):
+    from life import jobs
+
+    monkeypatch.setattr(jobs, "_正在跑", {"settle": "fake1"})
+    monkeypatch.setattr(jobs, "_任务表", {"fake1": jobs.任务(id="fake1", 动作="settle", 名称="归纳最近的记录")})
+
+    状态, _, 位置 = 请求(站, "POST", "/jobs/settle", 表单={"token": 令牌(站)})
+    assert 状态 == 303
+    assert 位置 == "/jobs/fake1", "已经在跑就直接进那个任务页，不该起第二个"
