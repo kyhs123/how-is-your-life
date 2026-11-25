@@ -18,7 +18,7 @@
 | 2 | 三路检索 + `life ask`（**项目的验证点**：它能不能提起你忘掉的事） | ✅ |
 | 3 | 目标 + 证据视图 + 固化（`settle`）+ 晋升（`promote`） | ✅ |
 | 4 | 画像 + 回顾（含单文件 HTML）+ 示例数据 | ✅ |
-| 5 | 可编辑的网页界面 | 计划中 |
+| 5 | 可编辑的网页界面（life server） | ✅ |
 
 ---
 
@@ -44,6 +44,9 @@
 
 # 季度回顾，单文件 HTML
 .\.venv\Scripts\life.exe review --quarter --html --out 回顾.html
+
+# 可编辑的本机网页（改目标、确认待确认的记录）
+.\.venv\Scripts\life.exe server --open
 ```
 
 `life ask` 的输出长这样（真跑出来的）：
@@ -89,6 +92,7 @@ copy .env.example .env                       # 填 CHAT_API_KEY
 | `life portrait [--diff]` | 季度画像（写假设，不写判决） |
 | `life review [--week\|--quarter] [--html]` | 回顾 |
 | `life demo` | 灌入虚构示例数据 |
+| `life server` | 本机网页界面：改目标、确认待确认的记录（只绑 127.0.0.1） |
 | `life reindex [--vectors]` | 从 markdown 重建索引 |
 
 ---
@@ -109,6 +113,7 @@ copy .env.example .env                       # 填 CHAT_API_KEY
 | 回顾 | [回顾.md](docs/features/回顾.md) | `life/review.py`、`life/prompts/review.md` |
 | 看板 | [看板.md](docs/features/看板.md) | `life/board.py` |
 | 示例数据 | [示例数据.md](docs/features/示例数据.md) | `life/cli.py`、`data.example/` |
+| 网页编辑 | [网页编辑.md](docs/features/网页编辑.md) | `life/server.py` |
 | 假模型 | [假模型.md](docs/features/假模型.md) | `life/fake_model.py` |
 
 完整索引见 [docs/features/README.md](docs/features/README.md)。设计文档：[docs/DESIGN.md](docs/DESIGN.md)。拍过的决定：[docs/决策记录.md](docs/决策记录.md)。

@@ -17,11 +17,12 @@
 | 画像（`life portrait`） | [画像.md](画像.md) | `life/portrait.py`、`life/prompts/portrait.md` |
 | 回顾（`life review`） | [回顾.md](回顾.md) | `life/review.py`、`life/prompts/review.md` |
 | 示例数据（`life demo`） | [示例数据.md](示例数据.md) | `life/cli.py`、`data.example/` |
+| 网页编辑（`life server`） | [网页编辑.md](网页编辑.md) | `life/server.py`、`life/goal.py` |
 
 > 看板是把 §4.8「可选生成单文件 HTML」的展示部分提前做了，没有引入任何框架或服务端。
 
-## 还没做的（后面几周）
+## 还没做的
 
-| 功能 | 计划周次 | 设计文档位置 |
-|---|---|---|
-| 可编辑网页界面（`life server`） | 第 5 周 | §10 路线图 |
+五周计划已经全部交付。剩下的都是设计里明确「MVP 之后」的事（§10.2）：手机入口、语音输入、周年触发、面试模式、章节→底色的 50 条挤出机制。
+
+还有 §3.2 的第二条晋升路线（章节 → 底色）没实现——它需要跨 ≥2 个完整章节 + 迁移证据，现在真实数据还凑不出来。
