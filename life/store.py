@@ -49,15 +49,15 @@ from life import config
 占位文件 = {
     "core.md": (
         "# 底色\n\n"
-        "<!-- 底色最多 50 条，靠证据晋升上来的，第 3 周才有这个功能。 -->\n"
+        "<!-- 底色最多 50 条，只能靠证据晋升上来；章节→底色还没实现，现在可以手写。 -->\n"
     ),
     "corrections.md": (
         "# 用户纠错\n\n"
-        "<!-- 你说的「不对，应该是这样」记在这里，优先级最高。第 3 周实现。 -->\n"
+        "<!-- 你说的「不对，应该是这样」记在这里，优先级最高。（还没做） -->\n"
     ),
     "changelog.md": (
         "# 晋升记录\n\n"
-        "<!-- 每次「当下 → 章节」「章节 → 底色」都会在这里留一行，第 3 周实现。 -->\n"
+        "<!-- 每次提名、晋升、拒绝都会在这里留一行（life settle / life promote 自动写）。 -->\n"
     ),
 }
 
@@ -339,14 +339,30 @@ def 格式化成markdown(条目: dict) -> str:
 
 
 def 从markdown解析(文本: str, 来源: Path | None = None) -> dict:
-    """把 markdown 拆成「front-matter（开头那段键值）+ 正文」。"""
+    """把 markdown 拆成「front-matter（开头那段键值）+ 正文」，再变成一条 entry。"""
+    头, 正文 = 解析front_matter(文本, 来源)
+
+    for 必须有的 in ("id", "ts", "part"):
+        if 必须有的 not in 头:
+            raise 存储错误(f"这个文件缺了 {必须有的} 字段：{来源}")
+
+    条目 = 新建条目(**{**头, "body": 正文})
+    # 文件名必须和 id 一致，不然索引和文件会对不上
+    if 来源 is not None and 来源.stem != 条目["id"]:
+        raise 存储错误(
+            f"文件名（{来源.stem}）和里面的 id（{条目['id']}）不一致：{来源}"
+        )
+    return 条目
+
+
+def 解析front_matter(文本: str, 来源: Path | None = None) -> tuple[dict, str]:
+    """通用的「拆开头那段」：entry / 目标 / 章节都用同一种文件格式。"""
     文本 = 文本.replace("\r\n", "\n")
     if not 文本.startswith("---\n"):
-        raise 存储错误(f"这个文件开头缺了 ---，不是一条记录：{来源}")
+        raise 存储错误(f"这个文件开头缺了 ---：{来源}")
 
     结束位置 = 文本.find("\n---\n", 4)
     if 结束位置 == -1:
-        # 理论上不会发生，除非文件被手动改坏了
         raise 存储错误(f"这个文件的开头那段没有结尾的 ---：{来源}")
 
     头文本 = 文本[4:结束位置]
@@ -360,17 +376,7 @@ def 从markdown解析(文本: str, 来源: Path | None = None) -> dict:
     if not isinstance(头, dict):
         raise 存储错误(f"这个文件开头那段不是一个键值表：{来源}")
 
-    for 必须有的 in ("id", "ts", "part"):
-        if 必须有的 not in 头:
-            raise 存储错误(f"这个文件缺了 {必须有的} 字段：{来源}")
-
-    条目 = 新建条目(**{**头, "body": 正文})
-    # 文件名必须和 id 一致，不然索引和文件会对不上
-    if 来源 is not None and 来源.stem != 条目["id"]:
-        raise 存储错误(
-            f"文件名（{来源.stem}）和里面的 id（{条目['id']}）不一致：{来源}"
-        )
-    return 条目
+    return 头, 正文
 
 
 # ── 小工具 ───────────────────────────────────────────────────
@@ -394,3 +400,208 @@ def _原子写入(路径: Path, 内容: str) -> None:
     临时 = 路径.with_name(路径.name + ".tmp")
     临时.write_text(内容, encoding="utf-8")
     临时.replace(路径)
+
+
+def _写front_matter(键值: dict) -> str:
+    """把字典渲染成开头那段。entry / 目标 / 章节共用。
+
+    简单的值（枚举、日期、数字）不加引号，长得像人话的才加——这样文件读起来和
+    DESIGN.md 里的示例一致：``status: active`` / ``title: "OAuth 调试"``。
+    """
+    行 = ["---"]
+    for 键, 值 in 键值.items():
+        if isinstance(值, bool):
+            行.append(f"{键}: {'true' if 值 else 'false'}")
+        elif isinstance(值, (int, float)):
+            行.append(f"{键}: {值}")
+        elif isinstance(值, (list, tuple)):
+            行.append(f"{键}: {_列表(list(值))}")
+        else:
+            文本 = str(值)
+            if 文本 and re.fullmatch(r"[A-Za-z0-9_\-\.\+:]+", 文本):
+                行.append(f"{键}: {文本}")
+            else:
+                行.append(f"{键}: {_文本(文本)}")
+    行.append("---")
+    return "\n".join(行)
+
+
+# ── 目标（DESIGN.md §3.4 goal）─────────────────────────────────
+
+期限取值 = ("short", "term", "long")  # 2周~1月 / 1学期~半年 / 1~3年
+目标状态取值 = ("active", "done", "stopped", "paused")
+
+
+def 清洗文件名(名字: str) -> str:
+    """把标题变成能当文件名/命令参数用的东西。
+
+    中文一律保留（你自己的东西，看得懂最重要），只把 Windows 不允许的字符换掉。
+    """
+    结果 = re.sub(r'[\\/:*?"<>|\n\r\t]', "-", 名字).strip().strip(".")
+    结果 = re.sub(r"-{2,}", "-", 结果)
+    if not 结果:
+        raise 存储错误("标题是空的，或者全是不能当文件名的字符。")
+    return 结果[:60]
+
+
+def 新建目标(**字段) -> dict:
+    标题 = str(字段.pop("title", "") or "").strip()
+    if not 标题:
+        raise 存储错误("目标得有个标题。")
+
+    期限 = 字段.pop("horizon", "term")
+    if 期限 not in 期限取值:
+        raise 存储错误(f"horizon 只能是 {list(期限取值)} 之一，你给的是 {期限!r}。")
+
+    状态 = 字段.pop("status", "active")
+    if 状态 not in 目标状态取值:
+        raise 存储错误(f"目标状态只能是 {list(目标状态取值)} 之一，你给的是 {状态!r}。")
+
+    return {
+        "id": str(字段.pop("id", "") or 清洗文件名(标题)),
+        "title": 标题,
+        "horizon": 期限,
+        "why": str(字段.pop("why", "") or ""),
+        "started": str(字段.pop("started", "") or 现在().date().isoformat()),
+        "due": str(字段.pop("due", "") or ""),
+        "status": 状态,
+        # derived = 进度从记录推（默认）；manual = 你自己说
+        "progress_mode": str(字段.pop("progress_mode", "derived")),
+        "parent": str(字段.pop("parent", "") or ""),
+        "body": str(字段.pop("body", "") or ""),
+    }
+
+
+def 写目标(目标: dict) -> Path:
+    路径 = 确保vault就绪() / "goals" / f"{清洗文件名(目标['id'])}.md"
+    表 = {键: 值 for 键, 值 in 目标.items() if 键 != "body"}
+    _原子写入(路径, _写front_matter(表) + "\n" + (目标.get("body") or "") + "\n")
+    return 路径
+
+
+def 读目标(路径: Path) -> dict:
+    头, 正文 = 解析front_matter(路径.read_text(encoding="utf-8"), 来源=路径)
+    return 新建目标(**{**头, "body": 正文})
+
+
+def 遍历目标() -> list[Path]:
+    目录 = 确保vault就绪() / "goals"
+    return sorted(目录.glob("*.md"))
+
+
+def 全部目标() -> list[dict]:
+    结果 = []
+    for 路径 in 遍历目标():
+        try:
+            结果.append(读目标(路径))
+        except 存储错误:
+            continue  # 手改坏了的文件跳过，不影响别的
+    return 结果
+
+
+# ── 章节（DESIGN.md §3.4 chapter）─────────────────────────────
+
+章节状态取值 = ("active", "dormant", "promoted")
+
+
+def 新建章节(**字段) -> dict:
+    标题 = str(字段.pop("title", "") or "").strip()
+    if not 标题:
+        raise 存储错误("章节得有个标题。")
+
+    状态 = 字段.pop("status", "active")
+    if 状态 not in 章节状态取值:
+        raise 存储错误(f"章节状态只能是 {list(章节状态取值)} 之一，你给的是 {状态!r}。")
+
+    return {
+        "id": str(字段.pop("id", "") or 清洗文件名(标题)),
+        "title": 标题,
+        "started": str(字段.pop("started", "") or 现在().date().isoformat()),
+        "layers": list(字段.pop("layers", None) or ["now"]),
+        "entry_count": int(字段.pop("entry_count", 0) or 0),
+        "level_max": int(字段.pop("level_max", 0) or 0),
+        "status": 状态,
+        "last_evidence": str(字段.pop("last_evidence", "") or 现在().date().isoformat()),
+        "body": str(字段.pop("body", "") or ""),
+    }
+
+
+def 写章节(章节: dict) -> Path:
+    路径 = 确保vault就绪() / "chapters" / f"{清洗文件名(章节['id'])}.md"
+    表 = {键: 值 for 键, 值 in 章节.items() if 键 != "body"}
+    _原子写入(路径, _写front_matter(表) + "\n" + (章节.get("body") or "") + "\n")
+    return 路径
+
+
+def 读章节(路径: Path) -> dict:
+    头, 正文 = 解析front_matter(路径.read_text(encoding="utf-8"), 来源=路径)
+    return 新建章节(**{**头, "body": 正文})
+
+
+def 遍历章节() -> list[Path]:
+    目录 = 确保vault就绪() / "chapters"
+    return sorted(目录.glob("*.md"))
+
+
+def 全部章节() -> list[dict]:
+    结果 = []
+    for 路径 in 遍历章节():
+        try:
+            结果.append(读章节(路径))
+        except 存储错误:
+            continue
+    return 结果
+
+
+# ── 晋升日志（DESIGN.md §3.2）─────────────────────────────────
+
+
+def 追加日志(一句话: str, *, 带日期: bool = True) -> Path:
+    """往 vault/changelog.md 追加一行。
+
+    DESIGN.md §3.2：每次晋升必须生成一条可见记录。
+    格式是「日期 + 一句话」，换行时下面的说明行可以不带日期。
+    """
+    路径 = 确保vault就绪() / "changelog.md"
+    前缀 = f"{现在().date().isoformat()} " if 带日期 else ""
+    with 路径.open("a", encoding="utf-8") as 文件:
+        文件.write(f"{前缀}{一句话}\n")
+    return 路径
+
+
+def 读日志() -> list[str]:
+    """读 changelog.md 里的正文行（去掉标题和注释）。"""
+    路径 = 确保vault就绪() / "changelog.md"
+    文本 = 路径.read_text(encoding="utf-8") if 路径.exists() else ""
+    文本 = re.sub(r"<!--.*?-->", "", 文本, flags=re.S)
+    行们 = [行.strip() for 行 in 文本.splitlines() if 行.strip()]
+    return [行 for 行 in 行们 if not 行.startswith("#")]
+
+
+# ── 底色（DESIGN.md §3.4 core：一个文件装全部，≤50 条）────────
+
+
+def 读底色项() -> list[dict]:
+    """把 core.md 拆成一条条：``## 名字`` 加它下面的几行。"""
+    路径 = 确保vault就绪() / "core.md"
+    文本 = 路径.read_text(encoding="utf-8") if 路径.exists() else ""
+    文本 = re.sub(r"<!--.*?-->", "", 文本, flags=re.S)
+
+    项们: list[dict] = []
+    当前: dict | None = None
+    for 行 in 文本.splitlines():
+        if 行.startswith("## "):
+            当前 = {"name": 行[3:].strip(), "lines": []}
+            项们.append(当前)
+        elif 当前 is not None and 行.strip():
+            当前["lines"].append(行.strip())
+    return 项们
+
+
+def 追加底色项(名字: str, 行们: list[str]) -> Path:
+    路径 = 确保vault就绪() / "core.md"
+    with 路径.open("a", encoding="utf-8") as 文件:
+        文件.write(f"\n## {名字}\n")
+        for 行 in 行们:
+            文件.write(f"- {行}\n")
+    return 路径

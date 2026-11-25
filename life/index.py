@@ -69,6 +69,31 @@ CREATE TABLE IF NOT EXISTS vec_entries(
     model TEXT,
     dim INT
 );
+
+CREATE TABLE IF NOT EXISTS chapters(
+    id TEXT PRIMARY KEY,
+    title TEXT,
+    status TEXT,
+    level_max INT,
+    entry_count INT,
+    last_evidence TEXT
+);
+
+CREATE TABLE IF NOT EXISTS goals(
+    id TEXT PRIMARY KEY,
+    title TEXT,
+    horizon TEXT,
+    status TEXT,
+    due TEXT
+);
+
+CREATE TABLE IF NOT EXISTS core(
+    name TEXT PRIMARY KEY,
+    level_max INT,
+    first_at TEXT,
+    last_at TEXT,
+    status TEXT
+);
 """
 
 # 老库升级用：表已经存在时，这些列要补上去（CREATE TABLE IF NOT EXISTS 不会补列）
@@ -165,10 +190,10 @@ def 记录用量(
 
 
 def 重建索引() -> dict:
-    """`life reindex`：把索引清空，从 vault/now/ 的 markdown 全部重读一遍。
+    """`life reindex`：把索引清空，从 markdown 全部重读一遍。
 
     DESIGN.md §3.5 的硬性验收项。索引删了、坏了、或者你手改了 markdown，
-    跑这个命令就能修好。
+    跑这个命令就能修好。记录、章节、目标、底色都在这里一起重建。
     """
     文件们 = store.遍历条目()
     失败: list[str] = []
@@ -179,6 +204,9 @@ def 重建索引() -> dict:
         with 连接:
             连接.execute("DELETE FROM entries")
             连接.execute("DELETE FROM entries_fts")
+            连接.execute("DELETE FROM chapters")
+            连接.execute("DELETE FROM goals")
+            连接.execute("DELETE FROM core")
 
         for 路径 in 文件们:
             try:
@@ -188,10 +216,66 @@ def 重建索引() -> dict:
                 continue
             写入条目(连接, 条目)
             成功 += 1
+
+        章节数 = 0
+        for 章节 in store.全部章节():
+            写入章节(连接, 章节)
+            章节数 += 1
+
+        目标数 = 0
+        for 目标 in store.全部目标():
+            写入目标(连接, 目标)
+            目标数 += 1
+
+        底色数 = 0
+        for 项 in store.读底色项():
+            写入底色项(连接, 项)
+            底色数 += 1
     finally:
         连接.close()
 
-    return {"扫描": len(文件们), "成功": 成功, "失败": 失败}
+    return {
+        "扫描": len(文件们),
+        "成功": 成功,
+        "失败": 失败,
+        "章节": 章节数,
+        "目标": 目标数,
+        "底色": 底色数,
+    }
+
+
+def 写入章节(连接: sqlite3.Connection, 章节: dict) -> None:
+    连接.execute(
+        "INSERT OR REPLACE INTO chapters (id, title, status, level_max, entry_count, last_evidence) "
+        "VALUES (?,?,?,?,?,?)",
+        (
+            章节["id"],
+            章节["title"],
+            章节["status"],
+            章节["level_max"],
+            章节["entry_count"],
+            章节["last_evidence"],
+        ),
+    )
+    连接.commit()
+
+
+def 写入目标(连接: sqlite3.Connection, 目标: dict) -> None:
+    连接.execute(
+        "INSERT OR REPLACE INTO goals (id, title, horizon, status, due) VALUES (?,?,?,?,?)",
+        (目标["id"], 目标["title"], 目标["horizon"], 目标["status"], 目标["due"]),
+    )
+    连接.commit()
+
+
+def 写入底色项(连接: sqlite3.Connection, 项: dict) -> None:
+    """底色那一条，顺带记下它的首次/最近时间（从证据行里读不出来就算空）。"""
+    连接.execute(
+        "INSERT OR REPLACE INTO core (name, level_max, first_at, last_at, status) "
+        "VALUES (?,?,?,?,?)",
+        (项["name"], 0, "", "", "fresh"),
+    )
+    连接.commit()
 
 
 def 统计(连接: sqlite3.Connection) -> dict:
