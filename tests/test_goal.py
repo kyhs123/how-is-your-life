@@ -16,10 +16,8 @@ from life import cli, index, store
 
 def _记一条(did: str, *, 天前: int = 0, goal: str = "", level: int = 0, minutes: int = 0) -> None:
     """造一条记录（同时在 md 和索引里）。"""
-    # 每条往前挪一秒，保证 id 不撞（id 精确到秒，同一秒里造两条会被覆盖成一条）
-    _记一条.序号 = getattr(_记一条, "序号", 0) + 1
-    时间 = (store.现在() - timedelta(days=天前, seconds=_记一条.序号)).replace(microsecond=0)
-    编号 = 时间.strftime("%Y%m%d-%H%M%S")
+    # 用生产代码里的分配器保证 id 不撞（id 精确到秒，同一秒造两条会被覆盖成一条）
+    编号, 时间 = store.分配id(store.现在() - timedelta(days=天前))
     条目 = store.新建条目(
         id=编号,
         ts=store.时间文本(时间),
