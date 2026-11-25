@@ -115,6 +115,7 @@ copy .env.example .env                       # 填 CHAT_API_KEY
 | `life demo` | 灌入虚构示例数据 |
 | `life server` | 本机网页界面（主界面）：记一条、翻记录、提问、管目标（只绑 127.0.0.1） |
 | `life reindex [--vectors]` | 从 markdown 重建索引 |
+| `life tidy [--dry-run]` | 瘦身：清旧缓存和孤儿全文（记录一条都不动） |
 
 ---
 
@@ -187,6 +188,7 @@ life/           程序本体
   recorder.py   记一条的完整链路（CLI 与网页共用）
   uploads.py    上传：multipart 解析、类型判定、docx/txt 抽文本
   jobs.py       后台任务：长任务点按钮跑，页面自刷看结果
+  tidy.py       瘦身：清旧缓存/孤儿全文（只删能重建的）
   llm.py        模型网关（三级降级 + 向量）
   config.py     配置
   prompts/      所有 prompt（纯文本）

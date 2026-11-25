@@ -18,6 +18,7 @@
 | 回顾（`life review`） | [回顾.md](回顾.md) | `life/review.py`、`life/prompts/review.md` |
 | 示例数据（`life demo`） | [示例数据.md](示例数据.md) | `life/cli.py`、`data.example/` |
 | 网页编辑（`life server`） | [网页编辑.md](网页编辑.md) | `life/server.py`、`life/goal.py` |
+| 瘦身（`life tidy`） | [瘦身.md](瘦身.md) | `life/tidy.py`、`life/extract.py` |
 
 > 看板是把 §4.8「可选生成单文件 HTML」的展示部分提前做了，没有引入任何框架或服务端。
 
