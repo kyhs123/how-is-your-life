@@ -64,7 +64,7 @@
 
 | 页面 | 能做什么 |
 |---|---|
-| 今天 | 写一句话记下来（可标「感受」「只存本地」）+ 最近七天 |
+| 今天 | 写一句话记下来，或传一张图 / 一个文件（png·jpg·webp·gif / txt·md·docx）+ 最近七天 |
 | 记录 | 翻全部记录，按类型/档位筛选，按月分组 |
 | 单条 | 看全部字段，改那句话 / 档位 / 结果 / 状态 |
 | 提问 | 输一句话，它翻出旧记录并回答（也可以只看翻到了什么） |
@@ -103,7 +103,7 @@ copy .env.example .env                       # 填 CHAT_API_KEY
 
 | 命令 | 干什么 |
 |---|---|
-| `life add "…"` | 记一件事（`--image` / `--emotion` / `--private` / `--demo`） |
+| `life add "…"` | 记一件事（`--image` 图片 / `--file` 文档 / `--emotion` / `--private` / `--demo`） |
 | `life retry` | 把没抽成功的补抽一遍（断网时用） |
 | `life ask "…"` | 带着旧记录回答；`--dry-run` 只看召回了什么 |
 | `life board` | 生成单文件网页看板 |
@@ -185,6 +185,7 @@ life/           程序本体
   server.py     本机网页界面（路由 + 安全）
   pages.py      网页的渲染层（只拼 HTML，不碰磁盘）
   recorder.py   记一条的完整链路（CLI 与网页共用）
+  uploads.py    上传：multipart 解析、类型判定、docx/txt 抽文本
   llm.py        模型网关（三级降级 + 向量）
   config.py     配置
   prompts/      所有 prompt（纯文本）
