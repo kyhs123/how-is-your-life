@@ -54,6 +54,13 @@ from life import config, index, llm, store
 
 日期词 = ("今天", "去年", "一年前", "这个时候", "这时候", "那天", "那阵", "那会儿")
 
+# 「我是什么样的人」这类问题，字面上和任何一条记录都不像。
+# 它要的不是「相似」，而是「代表性」：把最能说明问题的记录挑出来。
+元问题词 = (
+    "什么样的人", "什么人", "我是谁", "我做过什么", "我会什么", "我擅长",
+    "能力", "优点", "缺点", "评价我", "你觉得我", "介绍我", "经历",
+)
+
 每路条数 = 10  # §4.3：三路各取 10 条
 
 
@@ -284,6 +291,11 @@ def _结构路(连接: sqlite3.Connection, 查询: str) -> tuple[list[str], list
         ):
             编号们.append(行["id"])
 
+    # ②.5 「我是什么样的人」→ 挑最能代表的，而不是最先想到的
+    if any(词 in 查询 for 词 in 元问题词):
+        走了.append("代表性记录（档位高的优先）")
+        编号们 += _代表性(连接)
+
     # ③ 那次之后怎么恢复的（低谷之后的第一个 done）
     if any(词 in 查询 for 词 in 恢复词):
         走了.append("低谷之后怎么恢复")
@@ -300,6 +312,19 @@ def _结构路(连接: sqlite3.Connection, 查询: str) -> tuple[list[str], list
                 编号们.append(行["id"])
 
     return 编号们, 走了
+
+
+def _代表性(连接: sqlite3.Connection, 条数: int = 12) -> list[str]:
+    """挑「最能代表这个人」的记录：档位高的优先，同档按时间倒序。
+
+    为什么需要这一路：用户问「你觉得我是个什么样的人」时，三路文字检索全是 0 命中，
+    兜底只能给最近三条——那三条可能全是今天的琐事，简历里的项目一条都进不来。
+    """
+    行们 = 连接.execute(
+        "SELECT id FROM entries WHERE private = 0 ORDER BY level DESC, ts DESC LIMIT ?",
+        (条数,),
+    ).fetchall()
+    return [行["id"] for 行 in 行们]
 
 
 def _查(连接: sqlite3.Connection, sql: str) -> list[str]:

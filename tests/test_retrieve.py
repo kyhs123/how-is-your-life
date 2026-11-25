@@ -23,6 +23,7 @@ def _造(
     private: bool = False,
     tech: list[str] | None = None,
     people: list[str] | None = None,
+    when: str = "",
 ) -> None:
     时间 = (store.现在() - timedelta(days=天前)).replace(microsecond=0)
     条目 = store.新建条目(
@@ -31,6 +32,7 @@ def _造(
         did=did,
         body=did,
         level=level,
+        when=when,
         part="emotion" if valence < -0.7 else "record",
         private=private,
         anchors={"tech": tech or [], "people": people or [], "link": ""},
@@ -108,3 +110,29 @@ def test_什么都没搜到时也给几条最近的(临时工作区):
 
     输出 = _试("完全不相关的一句话")
     assert "一条都没召回到" not in 输出
+
+
+def test_问我是什么样的人会去挑代表性记录(临时工作区):
+    """这类问题字面上跟任何记录都不像（实测三路全 0 命中）。
+
+    所以要有一条「代表性」检索：档位高的优先，而不是只给最近三条。
+    """
+    _造("今天买了瓶水", 天前=0, level=0)
+    _造("独立完成 STM32 竞速小车整车软硬件", 天前=0, level=2)
+
+    输出 = _试("你觉得我是个什么样的人")
+
+    assert "代表性记录" in 输出
+    assert "STM32" in 输出
+
+
+def test_召回列表显示人话时间而不是时间戳(临时工作区):
+    """给模型看的日期必须是 when（「大学期间」），不是 ts。
+
+    实测没过这一条时，模型会说「你的记录里全是 2026-11-25 这一天」。
+    """
+    _造("用 ctypes 调机械臂 SDK", 天前=0, level=2, when="大学期间")
+
+    输出 = _试("你觉得我是个什么样的人")
+
+    assert "大学期间" in 输出
