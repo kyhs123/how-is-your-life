@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "how-is-your-life"
+version = "0.1.0"
+description = "How Is Your Life「你过得怎么样」——本地运行的人生记录工具"
+requires-python = ">=3.11"
+dependencies = [
+    "typer>=0.12",
+    "PyYAML>=6.0",
+]
+
+# 装好之后，命令行里直接敲 `life` 就能用
+[project.scripts]
+life = "life.cli:main"
+
+[tool.setuptools]
+packages = ["life", "life.prompts"]
+
+# prompt 是纯文本文件，打包时要带上，否则装完就找不到了
+[tool.setuptools.package-data]
+"life.prompts" = ["*.md"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

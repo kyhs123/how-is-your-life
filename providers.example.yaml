@@ -1,0 +1,48 @@
+# 复制成 providers.yaml 再按需修改：
+#   cp providers.example.yaml providers.yaml
+#
+# providers.yaml 已被 .gitignore 忽略，不会上传。
+#
+# 注意：这里只写「环境变量的名字」，不写 key 本身。
+# 真实 key 放在 .env 里（见 .env.example），代码通过 os.environ 读取。
+
+providers:
+  chat:
+    base_url: https://api.deepseek.com/v1
+    api_key_env: CHAT_API_KEY
+  vectors:
+    base_url: https://api.siliconflow.cn/v1
+    api_key_env: VEC_API_KEY
+
+tasks:
+  # 抽取：量大，挑最便宜的
+  extract:
+    provider: chat
+    model: deepseek-chat
+    json: strict
+
+  # 周固化 / 季度画像：要长上下文（30k 起）
+  settle:
+    provider: chat
+    model: deepseek-chat
+
+  # 对话：产品的命门，用你付得起的最强那档
+  dialogue:
+    provider: chat
+    model: deepseek-chat
+
+  # 视觉：必须是多模态模型（上面的 chat 模型不支持图片时换成别的）
+  vision:
+    provider: chat
+    model: <换成你接入时的多模态模型名>
+
+  # 向量检索
+  embed:
+    provider: vectors
+    model: BAAI/bge-m3
+    batch: 64
+
+  # 精排（可选，没有就删掉，检索走两路）
+  rerank:
+    provider: vectors
+    model: BAAI/bge-reranker-v2-m3

@@ -1,0 +1,57 @@
+#!/bin/sh
+# ─────────────────────────────────────────────────────────────
+# 提交前拦截：敏感文件与密钥特征
+#
+# 启用方式（每个克隆只需执行一次）：
+#   git config core.hooksPath .githooks
+#
+# 这比 .gitignore 更保险：.gitignore 只挡「它知道的文件名」，
+# 这个钩子挡「一切长得像密钥的东西」。
+#
+# 误报时可用 git commit --no-verify 跳过，但请先自己确认。
+# ─────────────────────────────────────────────────────────────
+set -e
+fail=0
+
+# ── 1. 文件名黑名单 ──
+bad_paths=$(git diff --cached --name-only --diff-filter=ACMR \
+  | grep -Ev '\.env\.example$|providers\.example\.yaml$' \
+  | grep -Ei '(^|/)vault/|(^|/)\.env($|\.)|(^|/)providers\.yaml$|\.sqlite3?$|\.db$|\.pem$|\.key$|(^|/)secrets/|(^|/)\.credentials' \
+  || true)
+
+if [ -n "$bad_paths" ]; then
+  echo "" >&2
+  echo "✗ 拒绝提交：下面这些文件不能进仓库" >&2
+  echo "$bad_paths" | sed 's/^/    /' >&2
+  echo "" >&2
+  fail=1
+fi
+
+# ── 2. 内容特征（只看新增行）──
+added=$(git diff --cached --unified=0 -- . \
+  | grep '^+' | grep -v '^+++' || true)
+
+if [ -n "$added" ]; then
+  if echo "$added" | grep -Eq 'sk-[A-Za-z0-9_-]{20,}|ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|AKIA[0-9A-Z]{16}|xox[baprs]-[A-Za-z0-9-]{10,}'; then
+    echo "" >&2
+    echo "✗ 拒绝提交：新增内容里疑似有 API key（sk- / ghp_ / github_pat_ / AKIA / xox）" >&2
+    echo "" >&2
+    fail=1
+  fi
+
+  if echo "$added" | grep -Eq '(api[_-]?key|secret|password|token)[[:space:]]*[=:][[:space:]]*["'"'"'][^"'"'"']{16,}'; then
+    echo "" >&2
+    echo "✗ 拒绝提交：新增内容里有「硬编码的 key 或密码」" >&2
+    echo "  正确做法：写进环境变量，代码里只读 os.environ" >&2
+    echo "" >&2
+    fail=1
+  fi
+fi
+
+if [ "$fail" -ne 0 ]; then
+  echo "如果确认是误报：git commit --no-verify" >&2
+  echo "如果文件已经被跟踪：git rm --cached <路径>" >&2
+  exit 1
+fi
+
+exit 0

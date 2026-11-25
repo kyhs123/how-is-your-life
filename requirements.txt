@@ -1,0 +1,12 @@
+# 这个项目的全部依赖。
+# 安装方法见 README.md，一条命令：
+#   .venv\Scripts\python -m pip install -r requirements.txt
+
+# 命令行框架：把函数变成 `life add` 这样的命令，并自动生成 --help
+typer>=0.12
+
+# 读 providers.yaml 用（YAML 是一种给人看的配置文件格式）
+PyYAML>=6.0
+
+# 跑测试用。不是运行程序必需的，但装在一起省得你记两件事。
+pytest>=8.0
