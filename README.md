@@ -1,23 +1,56 @@
 # How Is Your Life「你过得怎么样」
 
-一个**本地运行**的人生记录工具：你写下自己做了什么、在想什么，它把内容整理成精准的短记录，分层存好，在你需要的时候把「你曾经做到过」的证据递到你手上。
+**一个本地运行的人生记录工具。** 你写下自己做了什么、在想什么，它把内容压成带锚点的一句话，分层存好；在你需要的时候，把「你曾经做到过」的证据递到你手上。
 
-> ⚠️ **这不是心理咨询。** 它不诊断、不评估、不给你贴标签。真撑不住的时候，请找人，或者拨打心理援助热线。
+核心不是记录，是**在正确的时刻把证据递给你**。所有笔记软件都负责存下来，没有一个负责在你想不起来的时候提醒你。
+
+> ⚠️ **这不是心理咨询。** 它不诊断、不评估、不给你贴标签。真撑不住的时候，请找人，或者打心理援助热线。
 >
-> 另一条底线写在设计文档里：如果它永远耐心、永远记得、永远不评判，真人会显得很差。**这个产品不该成为你不找真人的理由。**
+> 还有一条底线写在设计文档里：如果它永远耐心、永远记得、永远不评判，**真人会显得很差**。这个产品不该成为你不找真人的理由——它会在合适的时候把你推回现实：「这件事你要不要跟你导师说一句？」
+
+---
 
 ## 现在做到哪了
 
-| 周 | 状态 |
-|---|---|
-| 1 | ✅ 录入 + 抽取 + 索引 + 只读看板 |
-| 2 | ✅ **三路检索 + `life ask`**（本项目的验证点：它能不能提起你忘掉的事） |
-| 3 | ✅ 目标 + 证据视图 + 固化（`settle`）+ 晋升（`promote`） |
-| 4 | 情感记录 + 画像 + 回顾 + 完整 README + demo 数据 |
-| 5 | 可编辑的网页界面 |
+| 周 | 功能 | 状态 |
+|---|---|---|
+| 1 | 录入 + 抽取 + 索引 + 只读看板 | ✅ |
+| 2 | 三路检索 + `life ask`（**项目的验证点**：它能不能提起你忘掉的事） | ✅ |
+| 3 | 目标 + 证据视图 + 固化（`settle`）+ 晋升（`promote`） | ✅ |
+| 4 | 画像 + 回顾（含单文件 HTML）+ 示例数据 | ✅ |
+| 5 | 可编辑的网页界面 | 计划中 |
 
-功能清单和说明文档见 [docs/features/README.md](docs/features/README.md)；
-完整设计见 [docs/DESIGN.md](docs/DESIGN.md)；已经拍过的决定见 [docs/决策记录.md](docs/决策记录.md)。
+---
+
+## 30 秒看到效果
+
+不用配任何密钥，一条命令灌入一份**虚构的半年记录**（一个在学后端的学生）：
+
+```powershell
+.\.venv\Scripts\life.exe demo
+```
+
+然后：
+
+```powershell
+# 它能不能翻出你忘掉的事？（这是整个项目的验证点）
+.\.venv\Scripts\life.exe ask "我好累，感觉半年什么都没做成"
+
+# 一个目标的证据分布 —— 注意：没有百分比
+.\.venv\Scripts\life.exe goal show 1
+
+# 网页看板，双击就能看
+.\.venv\Scripts\life.exe board --open
+
+# 季度回顾，单文件 HTML
+.\.venv\Scripts\life.exe review --quarter --html --out 回顾.html
+```
+
+`life ask` 的输出长这样（真跑出来的）：
+
+> 累是真的。但「什么都没做成」这个结论我不认——2026-11-22 你跑了 5 公里，配速 6 分，比上个月还快了一点，这不是没做成。2026-09-26 你也说过「我是不是就这样了」，那次记录里只有崩溃；这次往前翻，至少还有一条往上走的。要不要今晚只把跑步那条备注成「比上个月快」，别的先不动？不想弄就睡。
+
+---
 
 ## 安装（三步）
 
@@ -27,63 +60,107 @@ python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -e .
 ```
 
-装完之后，命令就在 `.\.venv\Scripts\life.exe` 这个位置。
+装完之后命令在 `.\.venv\Scripts\life.exe`。想只敲 `life`，先执行一次 `.\.venv\Scripts\Activate.ps1`（提示「禁止运行脚本」就用完整路径，一样好使）。
 
-**下面所有命令都写成 `.\.venv\Scripts\life.exe`，是因为它一定能跑。** 如果你想只敲 `life`，
-先在这个终端里执行一次 `.\.venv\Scripts\Activate.ps1` 激活虚拟环境（如果提示「禁止运行脚本」，
-那就别折腾了，用完整路径一样好使）。
-
-## 试四条命令
-
-在仓库根目录 `life-record\` 下打开 PowerShell：
+### 接上模型（可选，但抽取需要）
 
 ```powershell
-# 1. 记一条（用假模型，不联网不花钱）
-.\.venv\Scripts\life.exe add "今天把 OAuth 调通了，卡在 state 参数签名，调了 4 小时" --demo
-
-# 2. 打开生成的记录看看（路径会打印在上面，长这样）
-#    vault/now/2026-11/20261125-162806.md
-
-# 3. 生成一个网页看板，双击就能看所有记录
-.\.venv\Scripts\life.exe board --open
-
-# 4. 从 markdown 重建索引（索引删了也能跑）
-.\.venv\Scripts\life.exe reindex
-
-# 5. 问一句，它带着你的旧记录回答
-.\.venv\Scripts\life.exe ask "我好累，感觉什么都没做成"
-
-# 6. 只看它翻出了哪些旧记录，不调对话模型（省钱、方便排查）
-.\.venv\Scripts\life.exe ask "OAuth" --dry-run
-
-# 7. 立一个目标，看它的证据分布（不给你百分比）
-.\.venv\Scripts\life.exe goal add "学完后端基础" --horizon term --why "想自己能做一个网站"
-.\.venv\Scripts\life.exe goal show 1
-
-# 8. 让散着的记录自己长出主线（它只提名，认不认你说了算）
-.\.venv\Scripts\life.exe settle --week
-.\.venv\Scripts\life.exe promote
+copy providers.example.yaml providers.yaml   # 改 base_url 和模型名
+copy .env.example .env                       # 填 CHAT_API_KEY
 ```
 
-如果屏幕上中文变成乱码，先敲一次 `chcp 65001` 再试。
+`providers.yaml` 和 `.env` 都在 `.gitignore` 里，不会上传。
 
-想用真 AI：把 `providers.example.yaml` 复制成 `providers.yaml`，把 `.env.example` 复制成 `.env`
-并填上 `CHAT_API_KEY`，然后去掉 `--demo`。
+> **踩过的坑**：如果你用的是「思考型」模型（带 reasoning 的），`max_tokens` 给小了会把额度全花在「想」上、正文一个字都出不来（`finish_reason=length`）。写长文的任务（画像、回顾、对话）在 `providers.yaml` 里给 `max_tokens: 8000`、`timeout: 300`。
+
+---
+
+## 命令一览
+
+| 命令 | 干什么 |
+|---|---|
+| `life add "…"` | 记一件事（`--image` / `--emotion` / `--private` / `--demo`） |
+| `life retry` | 把没抽成功的补抽一遍（断网时用） |
+| `life ask "…"` | 带着旧记录回答；`--dry-run` 只看召回了什么 |
+| `life board` | 生成单文件网页看板 |
+| `life goal add/list/show/done/stop` | 目标与证据视图 |
+| `life settle --week` | 归纳主题，够条件的写成晋升提名 |
+| `life promote` | 处理提名：要 / 不要 |
+| `life portrait [--diff]` | 季度画像（写假设，不写判决） |
+| `life review [--week\|--quarter] [--html]` | 回顾 |
+| `life demo` | 灌入虚构示例数据 |
+| `life reindex [--vectors]` | 从 markdown 重建索引 |
+
+---
+
+## 功能与代码对照
+
+| 功能 | 说明文档 | 主要代码 |
+|---|---|---|
+| vault 结构 | [vault结构.md](docs/features/vault结构.md) | `life/store.py` |
+| 录入 | [录入.md](docs/features/录入.md) | `life/cli.py`、`life/store.py` |
+| 抽取 | [抽取.md](docs/features/抽取.md) | `life/extract.py`、`life/llm.py`、`life/prompts/` |
+| 索引 | [索引.md](docs/features/索引.md) | `life/index.py` |
+| 三路检索 | [检索.md](docs/features/检索.md) | `life/retrieve.py` |
+| 对话 | [对话.md](docs/features/对话.md) | `life/ask.py`、`life/prompts/ask.md` |
+| 目标 | [目标.md](docs/features/目标.md) | `life/goal.py` |
+| 固化与晋升 | [晋升.md](docs/features/晋升.md) | `life/promote.py`、`life/prompts/settle.md` |
+| 画像 | [画像.md](docs/features/画像.md) | `life/portrait.py`、`life/prompts/portrait.md` |
+| 回顾 | [回顾.md](docs/features/回顾.md) | `life/review.py`、`life/prompts/review.md` |
+| 看板 | [看板.md](docs/features/看板.md) | `life/board.py` |
+| 示例数据 | [示例数据.md](docs/features/示例数据.md) | `life/cli.py`、`data.example/` |
+| 假模型 | [假模型.md](docs/features/假模型.md) | `life/fake_model.py` |
+
+完整索引见 [docs/features/README.md](docs/features/README.md)。设计文档：[docs/DESIGN.md](docs/DESIGN.md)。拍过的决定：[docs/决策记录.md](docs/决策记录.md)。
+
+---
 
 ## 隐私
 
-- 所有数据都在你本机 `vault/` 目录里，纯文本，你随时能拷走。
-- `vault/`、`.env`、`providers.yaml`、`*.sqlite` 都在 `.gitignore` 里，**永远不会被提交**。
-- 出网范围：只有「抽取」这一步会把你的原文发给你自己配置的模型接口。加了 `--private` 的记录**一个字节都不发**。
-- 零遥测，不做任何统计上报。
+| 项 | 说明 |
+|---|---|
+| 数据在哪 | 全在你本机 `vault/`，纯文本 markdown，随时能拷走 |
+| 哪些数据出网 | **只有「抽取」「对话」「画像」「回顾」「固化」这几步**会把相关文本发给你自己配置的模型接口 |
+| 发到哪 | 你自己在 `providers.yaml` 里写的那个地址（本项目不自带任何服务端） |
+| `--private` | 该条记录**一个字节都不发**，也不进检索、不进索引向量（有测试保证） |
+| 密钥 | 只在 `.env` / 环境变量里，代码只读环境变量；`.env` 永不进仓库 |
+| 遥测 | 零。不统计、不回传、不联网检查更新 |
+| 图片 | 不存原图。抽取完只留 OCR 全文 + 摘要（`--keep-image` 才例外） |
+
+`vault/`、`.env`、`providers.yaml`、`*.sqlite` 都在 `.gitignore` 里；`.githooks/pre-commit` 还会在提交前拦一道。
+
+---
+
+## 它不是什么
+
+- ❌ 简历生成器（简历是顺带产物）
+- ❌ 待办清单 / 习惯打卡（靠负罪感驱动是这类项目头号死因）
+- ❌ 心理咨询
+- ❌ AI 夸夸机（每次说「你已经很棒了」的产品，三天被关掉）
+- ❌ 云同步服务、账号系统、社交功能
+
+---
 
 ## 代码结构
 
 ```
-life/         程序本体（cli 命令入口 / store 文件读写 / extract 抽取 / index 索引 /
-              llm 模型网关 / retrieve 三路检索 / ask 对话 / board 看板）
-life/prompts/ 抽取和对话用的 prompt，纯文本，改它们不用动代码
-vault/        你的数据（不进仓库）
-tests/        自动测试
-docs/         设计文档 + 功能说明 + 学习总结
+life/           程序本体
+  cli.py        命令入口
+  store.py      markdown / inbox 读写（真相源）
+  index.py      SQLite 索引（可重建）
+  extract.py    抽取
+  retrieve.py   三路检索
+  ask.py        对话与输出校验
+  goal.py       目标与证据
+  promote.py    固化与晋升
+  portrait.py   季度画像
+  review.py     回顾（含 HTML）
+  board.py      只读看板
+  llm.py        模型网关（三级降级 + 向量）
+  config.py     配置
+  prompts/      所有 prompt（纯文本）
+data.example/   虚构的半年记录（life demo 用）
+tests/          测试（全部从命令行验证用户能看到的结果）
+docs/           设计 + 功能说明 + 学习总结 + 决策记录
+vault/          你的数据（不进仓库）
 ```

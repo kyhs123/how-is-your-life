@@ -14,6 +14,9 @@
 | 对话（`life ask`） | [对话.md](对话.md) | `life/ask.py`、`life/prompts/ask.md` |
 | 目标（`life goal`） | [目标.md](目标.md) | `life/goal.py`、`life/cli.py` |
 | 固化与晋升（`life settle` / `life promote`） | [晋升.md](晋升.md) | `life/promote.py`、`life/prompts/settle.md` |
+| 画像（`life portrait`） | [画像.md](画像.md) | `life/portrait.py`、`life/prompts/portrait.md` |
+| 回顾（`life review`） | [回顾.md](回顾.md) | `life/review.py`、`life/prompts/review.md` |
+| 示例数据（`life demo`） | [示例数据.md](示例数据.md) | `life/cli.py`、`data.example/` |
 
 > 看板是把 §4.8「可选生成单文件 HTML」的展示部分提前做了，没有引入任何框架或服务端。
 
@@ -21,7 +24,4 @@
 
 | 功能 | 计划周次 | 设计文档位置 |
 |---|---|---|
-| 情感记录深化 + 画像 `life portrait` | 第 4 周 | §4.7 / §7 |
-| 回顾 `life review` + HTML | 第 4 周 | §4.8（展示部分已提前做成 `life board`） |
-| README 完整版 + demo 数据 | 第 4 周 | §9.3 / §13 |
 | 可编辑网页界面（`life server`） | 第 5 周 | §10 路线图 |
