@@ -131,6 +131,7 @@ def _最新画像() -> tuple[str, str]:
 class 处理器(BaseHTTPRequestHandler):
     令牌 = ""
     允许的主机: tuple[str, ...] = ()
+    允许的来源: frozenset[str] = frozenset()
 
     # 默认每次请求都打到 stderr，太吵
     def log_message(self, 格式: str, *参数) -> None:  # noqa: A002
@@ -142,10 +143,31 @@ class 处理器(BaseHTTPRequestHandler):
         return (self.headers.get("Host") or "").strip().lower() in self.允许的主机
 
     def _来源合法(self) -> bool:
+        """CSRF 的第二道（第一道是令牌）。
+
+        只拦「明确来自别的站点」的提交：
+        - 没有 Origin/Referer（curl、或浏览器隐私设置把它去掉了）→ 放行，靠令牌
+        - Origin 是 "null"（沙箱 iframe、某些隐私模式）→ 放行，靠令牌
+        - 有明确来源 → 必须正好是本服务的地址
+
+        一开始写成「必须 http://127.0.0.1: 开头」，把正常操作也拦了（真事故），
+        所以改成现在这样：**默认放行，只拦说得清的坏来源**。
+        """
         来源 = (self.headers.get("Origin") or self.headers.get("Referer") or "").strip()
-        if not 来源:
-            return True  # curl 之类不带；令牌兜底
-        return 来源.startswith(("http://127.0.0.1:", "http://localhost:"))
+        if not 来源 or 来源.lower() == "null":
+            return True
+        return 来源.rstrip("/") in self.允许的来源
+
+    def _来源快照(self) -> str:
+        """拦截时把收到的关键头写在页面上，方便排查（这些值不含秘密）。"""
+        端口 = self.server.server_address[1]
+        return (
+            f"Host: {self.headers.get('Host')!r} ｜ "
+            f"Origin: {self.headers.get('Origin')!r} ｜ "
+            f"Referer: {self.headers.get('Referer')!r} ｜ "
+            f"本服务接受的来源: {sorted(self.允许的来源)} ｜ "
+            f"实际端口: {端口}"
+        )
 
     def _令牌合法(self, 表单: dict[str, str]) -> bool:
         提交 = (表单.get("token") or "").encode("utf-8")
@@ -160,7 +182,7 @@ class 处理器(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Content-Length", str(len(数据)))
         self.send_header("X-Content-Type-Options", "nosniff")
-        self.send_header("Referrer-Policy", "no-referrer")
+        self.send_header("Referrer-Policy", "same-origin")
         self.send_header("Cache-Control", "no-store")
         self.end_headers()
         self.wfile.write(数据)
@@ -197,7 +219,7 @@ class 处理器(BaseHTTPRequestHandler):
             self._出错(
                 HTTPStatus.FORBIDDEN,
                 "拒绝了",
-                "Host 不对。这个页面只服务 127.0.0.1，别用域名访问。",
+                "Host 不对。这个页面只服务 127.0.0.1，别用域名访问。" + chr(10) + self._来源快照(),
             )
             return
         try:
@@ -430,7 +452,11 @@ class 处理器(BaseHTTPRequestHandler):
 
     def _处理POST(self) -> None:
         if not self._来源合法():
-            self._出错(HTTPStatus.FORBIDDEN, "拒绝了", "这个表单不是从本页面提交的。")
+            self._出错(
+                HTTPStatus.FORBIDDEN,
+                "拒绝了",
+                "这个表单不是从本页面提交的。如果你是在本页面点的按钮，那就是我判断错了，请把下面这一行发给我：" + chr(10) + self._来源快照(),
+            )
             return
 
         表单 = self._读表单()
@@ -586,6 +612,10 @@ def 造服务器(端口: int = 8770) -> ThreadingHTTPServer:
     实际端口 = 服务器.server_address[1]
     处理器.令牌 = secrets.token_urlsafe(24)
     处理器.允许的主机 = (f"127.0.0.1:{实际端口}", f"localhost:{实际端口}")
+    # 只接受这一份来源。Origin 精确匹配，不做前缀判断（前缀会把 127.0.0.1:其它端口 也放进来）。
+    处理器.允许的来源 = frozenset(
+        {f"http://127.0.0.1:{实际端口}", f"http://localhost:{实际端口}"}
+    )
     return 服务器
 
 
