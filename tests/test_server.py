@@ -852,3 +852,69 @@ def test_可以一键全部确认(临时工作区, 站):
 
     _, 首页, _ = 请求(站, "GET", "/")
     assert "等你确认" not in 首页
+
+
+def test_上传文档时说明和文件内容都要给模型(临时工作区, 站, monkeypatch):
+    """踩过的坑：同时写说明 + 传文件时，只把说明发给了模型。
+
+    结果简历只抽出「这是我的简历」——文件内容对模型完全不可见。
+    """
+    import json
+
+    from life import llm
+
+    看到 = []
+
+    def 调用(任务名, 系统提示, 用户内容, **kw):
+        看到.append(用户内容)
+        return llm.模型回复(
+            文本=json.dumps(
+                {"entries": [{
+                    "did": "独立完成智能小车整车软硬件", "body": "独立完成智能小车整车软硬件",
+                    "part": "record", "minutes": 0, "outcome": "done",
+                    "anchors": {"tech": ["STM32"], "people": [], "link": ""},
+                    "emotion": {"valence": 0, "arousal": 0.3, "trigger": "", "quote": ""},
+                    "level": 2, "goal": "", "blockers": [],
+                }]},
+                ensure_ascii=False,
+            ),
+            输入token=1, 输出token=1, 模型名="测试", 降级到第几级=1,
+        )
+
+    monkeypatch.setattr(llm, "调用", 调用)
+
+    内容 = "项目一：智能小车\n独立完成整车软硬件，自绘并焊接 PCB".encode("utf-8")
+    体, 类型 = 多段({"token": 令牌(站), "text": "这是我的简历"}, 文件=("简历.txt", 内容))
+    请求(站, "POST", "/add", 原始=体, 类型=类型)
+
+    全部 = "\n".join(看到)
+    assert "这是我的简历" in 全部, "用户写的说明应该给模型"
+    assert "【文件内容】" in 全部 and "自绘并焊接 PCB" in 全部, "文件内容也必须给模型"
+
+
+def test_校验提示不混进回答正文(临时工作区, 站, monkeypatch):
+    """踩过的坑：把「这次有硬要求没做到」拼进了回答，看起来像 AI 说的话。"""
+    from life import ask as ask模块
+
+    monkeypatch.setattr(
+        ask模块,
+        "问",
+        lambda *a, **k: {
+            "回答": "这是一段正常的回答。",
+            "没做到": ["回答里没有出现任何一条记录的真实日期。"],
+            "召回": [],
+            "诊断": {"各路": {}},
+            "上下文token": 10,
+            "token": 10,
+        },
+    )
+
+    状态, 页面, _ = 请求(站, "GET", 查询("/ask", q="我好累"))
+    assert 状态 == 200
+
+    import re as _re
+
+    回答块 = _re.search(r'<article class="card answer">(.*?)</article>', 页面, _re.S)
+    assert 回答块, "应该有回答卡片"
+    assert "没做到" not in 回答块.group(1), "系统提示不能混进回答正文"
+    assert "没有出现任何一条记录的真实日期" in 页面, "但要单独显示给用户看"
