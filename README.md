@@ -95,7 +95,9 @@ copy .env.example .env                       # 填 CHAT_API_KEY
 
 `providers.yaml` 和 `.env` 都在 `.gitignore` 里，不会上传。
 
-> **踩过的坑**：如果你用的是「思考型」模型（带 reasoning 的），`max_tokens` 给小了会把额度全花在「想」上、正文一个字都出不来（`finish_reason=length`）。写长文的任务（画像、回顾、对话）在 `providers.yaml` 里给 `max_tokens: 8000`、`timeout: 300`。
+> **踩过的坑（一）**：思考型模型（带 reasoning 的）`max_tokens` 给小了，会把额度全花在「想」上、正文一个字都出不来（`finish_reason=length`）。写长文的任务给足 `max_tokens`。
+>
+> **踩过的坑（二）**：**模型的选择直接决定等待时间**。实测同一句提问，`deepseek-v4-pro` 36.5 秒、`glm-5.3-flash` 13.6 秒，质量都合格。默认配置用后者；想换回深思模型改 `providers.yaml` 的 `tasks.dialogue` / `tasks.settle` 一行即可。
 
 ---
 
