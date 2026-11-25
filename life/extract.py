@@ -472,11 +472,28 @@ def 缓存目录() -> Path:
     return 目录
 
 
+def 缓存路径(指纹: str) -> Path:
+    """缓存文件放哪：按指纹前两位分桶。
+
+    为什么分桶：每条内容一个文件，五年下来九千个，全堆在一个目录里
+    Windows 列目录会卡、查找也慢。分成 256 个桶，单目录最多几十个。
+    """
+    return 缓存目录() / 指纹[:2] / f"{指纹}.json"
+
+
 def 读缓存(指纹: str) -> dict | None:
-    """按内容指纹把整个缓存文件读出来（含防重复用的 entry_paths）。"""
-    路径 = 缓存目录() / f"{指纹}.json"
+    """按内容指纹把整个缓存文件读出来（含防重复用的 entry_paths）。
+
+    兼容老版本：以前是扁平存的（``缓存/抽取/<指纹>.json``），第一次读到
+    就顺手搬进桶里，不用单独跑迁移。
+    """
+    路径 = 缓存路径(指纹)
     if not 路径.exists():
-        return None
+        旧路径 = 缓存目录() / f"{指纹}.json"
+        if not 旧路径.exists():
+            return None
+        路径.parent.mkdir(parents=True, exist_ok=True)
+        旧路径.replace(路径)
     try:
         return json.loads(路径.read_text(encoding="utf-8"))
     except json.JSONDecodeError:
@@ -519,7 +536,8 @@ def 写缓存(指纹: str, 结果: dict, 记录路径们: list[Path]) -> None:
         "结果表": 结果表,
     }
 
-    路径 = 缓存目录() / f"{指纹}.json"
+    路径 = 缓存路径(指纹)
+    路径.parent.mkdir(parents=True, exist_ok=True)
     临时 = 路径.with_name(路径.name + ".tmp")
     临时.write_text(json.dumps(内容, ensure_ascii=False, indent=2), encoding="utf-8")
     临时.replace(路径)
