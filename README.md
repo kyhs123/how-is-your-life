@@ -92,6 +92,9 @@
 只绑 `127.0.0.1`：局域网里的手机和别的电脑连不上；不起外网服务、不引前端框架、无外部资源。
 能改什么、不能改什么，见施工图 [docs/WEBUI.md](docs/WEBUI.md)。
 
+界面长什么样：[首页](docs/screenshots/首页.png) ｜ [记录](docs/screenshots/记录.png)。
+样式规则（纸色 + 墨色 + 一个强调色、三级字体、靠留白分区）在 [docs/WEBUI.md](docs/WEBUI.md) §4。
+
 ## 安装（三步）
 
 ```powershell
