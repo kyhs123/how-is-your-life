@@ -19,6 +19,7 @@
 | 示例数据（`life demo`） | [示例数据.md](示例数据.md) | `life/cli.py`、`data.example/` |
 | 网页编辑（`life server`） | [网页编辑.md](网页编辑.md) | `life/server.py`、`life/goal.py` |
 | 瘦身（`life tidy`） | [瘦身.md](瘦身.md) | `life/tidy.py`、`life/extract.py` |
+| 导出（`life export`：简历 / 微博 / 自我介绍 / 周报 / 任意） | [导出.md](导出.md) | `life/export.py`、`life/prompts/export_*.md` |
 | 启动（双击 `启动.bat`） | [启动.md](启动.md) | `启动.bat`、`life/server.py` |
 
 > 看板是把 §4.8「可选生成单文件 HTML」的展示部分提前做了，没有引入任何框架或服务端。

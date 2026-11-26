@@ -22,6 +22,7 @@ import typer
 from life import config, extract, index, llm, retrieve, store
 from life import ask as ask模块
 from life import board as board模块
+from life import export as export模块
 from life import goal as goal模块
 from life import portrait as portrait模块
 from life import promote as promote模块
@@ -501,6 +502,63 @@ def review(
             typer.echo("  双击这个文件就能用浏览器打开。")
     else:
         typer.echo(文本)
+
+
+@app.command()
+def export(
+    要求: str = typer.Argument(..., help="你要什么，加引号。比如 \"我要应聘机器人相关的工作，帮我生成一份简历\""),
+    模板: str = typer.Option(
+        "", "--template", help=f"指定模板（{' / '.join(export模块.模板们)}）；不填就从你的话里认"
+    ),
+    上限: int = typer.Option(26, "--max", help="最多拿多少条记录当素材"),
+    只看素材: bool = typer.Option(
+        False, "--dry-run", help="只看会挑哪些素材，不调模型（省钱、方便判断挑得对不对）"
+    ),
+    输出: Optional[Path] = typer.Option(None, "--out", help="另外复制一份到你指定的路径"),
+):
+    """把记录导出成能直接用的东西：简历 / 微博 / 自我介绍 / 周报 / 任意格式。"""
+    try:
+        用的模板 = 模板 or export模块.选模板(要求)
+        if 用的模板 not in export模块.模板们:
+            typer.echo(f"× 没有「{用的模板}」这个模板。可选：{'、'.join(export模块.模板们)}")
+            raise typer.Exit(1)
+
+        if 只看素材:
+            条目们, 诊断 = export模块.挑素材(要求, 上限=上限)
+            typer.echo(f"· 模板：{用的模板}")
+            typer.echo(f"· 素材 {len(条目们)} 条（只看档位高的 + 和你这句话相关的）：")
+            for 条目 in 条目们:
+                档 = {0: "接触", 1: "复现", 2: "产出", 3: "能讲"}.get(条目["level"], "?")
+                日期 = (条目.get("when") or "").strip() or 条目["ts"][:10]
+                typer.echo(f"    {日期}（{档}）{条目['did']}")
+            for 提示 in 诊断.get("提示", []):
+                typer.echo(f"· {提示}")
+            typer.echo("· 干跑：没有调模型，也什么都没写。")
+            return
+
+        结果 = export模块.生成(要求, 模板=用的模板, 上限=上限)
+    except ValueError as 错误:
+        typer.echo(f"× {错误}")
+        raise typer.Exit(1) from 错误
+    except llm.网络错误 as 错误:
+        typer.echo(f"× 连不上模型，这次没导出成。\n  {错误}")
+        raise typer.Exit(1) from 错误
+    except (llm.模型错误, config.配置错误) as 错误:
+        typer.echo(f"× 模型那边出问题了。\n  {错误}")
+        raise typer.Exit(1) from 错误
+
+    typer.echo(f"√ 导出好了（模板：{结果['模板']}，用了 {结果['条数']} 条记录）")
+    typer.echo(f"  {结果['路径']}")
+    if 结果["可疑数字"]:
+        typer.echo(
+            "  ⚠️ 这几处数字你的记录里没有，可能是编的，发出去前自己核一遍："
+            + "、".join(结果["可疑数字"])
+        )
+    typer.echo(f"· 这次 {结果['token']} token")
+    if 输出 is not None:
+        输出.parent.mkdir(parents=True, exist_ok=True)
+        输出.write_text(结果["路径"].read_text(encoding="utf-8"), encoding="utf-8")
+        typer.echo(f"· 另存了一份：{输出}")
 
 
 @app.command()

@@ -135,6 +135,7 @@ copy .env.example .env                       # 填 CHAT_API_KEY
 | `life promote` | 处理提名：要 / 不要 |
 | `life portrait [--diff]` | 季度画像（写假设，不写判决） |
 | `life review [--week\|--quarter] [--html]` | 回顾 |
+| `life export "我要应聘机器人相关的工作，帮我生成一份简历"` | **导出**：简历 / 微博 / 自我介绍 / 周报 / 任意格式（`--dry-run` 只看素材） |
 | `life demo` | 灌入虚构示例数据 |
 | `life server` | 本机网页界面（主界面）：记一条、翻记录、提问、管目标（只绑 127.0.0.1） |
 | `life reindex [--vectors]` | 从 markdown 重建索引 |
@@ -156,6 +157,7 @@ copy .env.example .env                       # 填 CHAT_API_KEY
 | 固化与晋升 | [晋升.md](docs/features/晋升.md) | `life/promote.py`、`life/prompts/settle.md` |
 | 画像 | [画像.md](docs/features/画像.md) | `life/portrait.py`、`life/prompts/portrait.md` |
 | 回顾 | [回顾.md](docs/features/回顾.md) | `life/review.py`、`life/prompts/review.md` |
+| 导出 | [导出.md](docs/features/导出.md) | `life/export.py`、`life/prompts/export_*.md` |
 | 看板 | [看板.md](docs/features/看板.md) | `life/board.py` |
 | 示例数据 | [示例数据.md](docs/features/示例数据.md) | `life/cli.py`、`data.example/` |
 | 网页界面 | [网页编辑.md](docs/features/网页编辑.md)（施工图：[WEBUI.md](docs/WEBUI.md)） | `life/server.py`、`life/pages.py` |
