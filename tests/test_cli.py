@@ -26,6 +26,15 @@ def test_add一条文字(临时工作区):
     assert len(条目["did"]) <= 60
 
 
+def test_add可以指定属于哪个目标(临时工作区):
+    结果 = 运行.invoke(cli.app, ["add", "投了三家实习", "--demo", "--goal", "找到实习"])
+    assert 结果.exit_code == 0, 结果.output
+
+    文件 = _条目文件(临时工作区)[0]
+    assert store.读条目(文件)["goal"] == "找到实习"
+    assert "找到实习" in 文件.read_text(encoding="utf-8").split("---")[1]
+
+
 def test_重复提交只留一条(临时工作区):
     for _ in range(2):
         结果 = 运行.invoke(cli.app, ["add", "今天把爬虫的反爬绕过去了", "--demo"])

@@ -25,9 +25,8 @@ import urllib.parse
     ("/entries", "记录"),
     ("/ask", "提问"),
     ("/goals", "目标"),
-    ("/chapters", "章节"),
+    ("/chapters", "主题"),
     ("/portrait", "画像"),
-    ("/review", "回顾"),
     ("/settings", "设置"),
 ]
 
@@ -169,7 +168,7 @@ def 统计块(统计: dict) -> str:
     """一行事实，不做图表、不做百分比。"""
     项 = [
         f"{统计.get('条数', 0)} 条记录",
-        f"{统计.get('章节', 0)} 个章节",
+        f"{统计.get('章节', 0)} 个主题",
         f"{统计.get('目标', 0)} 个目标",
         f"待确认 {统计.get('待看', 0)}",
     ]
@@ -274,7 +273,7 @@ def 单条(令牌: str, 条目: dict, *, 错误: str = "", 草稿: dict | None =
   {f'<blockquote>{e(条目["emotion"]["quote"])}</blockquote>' if 条目["emotion"]["quote"] else ""}
   <p class="meta">情绪 {条目["emotion"]["valence"]:+.1f} ｜ 强度 {条目["emotion"]["arousal"]:.1f}
      {"｜ 花了 " + str(条目["minutes"]) + " 分钟" if 条目["minutes"] else ""}
-     {"｜ 章节：" + e(条目["chapter"]) if 条目["chapter"] else ""}</p>
+     {"｜ 主题：" + e(条目["chapter"]) if 条目["chapter"] else ""}</p>
   <p class="meta">目标：{e(条目["goal"]) or "（无）"}</p>
 </article>"""
     )
@@ -469,9 +468,17 @@ def 目标表单(令牌: str, 目标: dict | None, *, 错误: str = "", 草稿: 
     return 布局("新建目标" if 新 else "修改目标", "\n".join(块), 活跃="/goals", 令牌=令牌)
 
 
-def 目标详情(令牌: str, 目标: dict, 证据: dict) -> str:
-    """证据卡。只写事实：几条、各档几条、拿得出手的是什么、还缺什么。"""
+def 目标详情(
+    令牌: str, 目标: dict, 证据: dict, *, 提示: str = "", 提示是错误: bool = False
+) -> str:
+    """证据卡。只写事实：几条、各档几条、拿得出手的是什么、还缺什么。
+
+    页面底下就是**这个目标自己的记一条**：在这里写的东西，`goal` 字段直接写成目标标题，
+    不问模型。所以「为目标记一件事」不用回首页、也不用记住目标叫什么。
+    """
     行 = []
+    if 提示:
+        行.append(提示块(提示, 是错误=提示是错误))
     摘要 = [f"{证据['条数']} 条记录"]
     if 证据["分钟"]:
         摘要.append(f"投入 ~{发小时(证据['分钟'])}")
@@ -518,9 +525,42 @@ def 目标详情(令牌: str, 目标: dict, 证据: dict) -> str:
     else:
         行.append(
             空状态(
-                "还没有记录挂到这个目标上。记录里的 goal 字段要和目标标题对上，才算证据。"
+                "还没有记录挂到这个目标上。下面直接写一条就行——"
+                "它会被记成这个目标的证据，不用你再去对名字。"
             )
         )
+
+    行.append(
+        f"""<section class="记一条">
+  <h2>往「{e(目标["title"])}」里记一条</h2>
+  <form method="post" action="/add" enctype="multipart/form-data">
+    <input type="hidden" name="token" value="{e(令牌)}">
+    <input type="hidden" name="goal" value="{e(目标["title"])}">
+    <input type="hidden" name="back" value="/goals/{q(目标["id"])}">
+    <label class="when">什么时候
+      <input name="when" maxlength="24"
+        placeholder="不填就是现在；以前的事可以写 大一 / 2023-09">
+    </label>
+    <label class="sr" for="goal-text">为这个目标做了什么</label>
+    <textarea id="goal-text" name="text" rows="3" maxlength="4000"
+      placeholder="为这个目标做了什么？一句话就够，细节越具体越好。比如：&#10;投了 3 家实习，第 2 家做完笔试&#10;把简历改了一遍，把小车项目挪到了最前面"></textarea>
+    <p class="file">
+      <label for="goal-file">或者传个文件（简历、截图、笔记）</label>
+      <input type="file" id="goal-file" name="file"
+        accept=".png,.jpg,.jpeg,.webp,.gif,.txt,.md,.docx">
+      <span class="hint">只传文件不写字也行</span>
+    </p>
+    <p class="checks">
+      <label><input type="checkbox" name="private" value="1"> 只存本地（不发给模型）</label>
+      <label><input type="checkbox" name="keep" value="1"> 保留原文件</label>
+    </p>
+    <p class="actions"><button type="submit">记到这个目标里</button>
+      <span class="hint">记完回到这一页，上面会多一条证据。</span></p>
+  </form>
+  <p class="hint">这里记的每一条都会算成证据。它只告诉你这个目标底下有几条、
+    各是什么档——不给你打分。</p>
+</section>"""
+    )
 
     正文 = f"""<section>
   <h2>{e(目标["title"])}</h2>
@@ -547,7 +587,14 @@ def 章节列表(
     令牌: str, 章节们: list[dict], 提名们: list[dict] | None = None
 ) -> str:
     提名们 = 提名们 or []
-    块 = ['<section><h2>章节 <small>（靠证据晋升上来的主线）</small></h2>']
+    块 = [
+        '<section><h2>主题</h2>'
+        '<p class="hint">你真正在忙的那些事。系统把同一件事的记录串到一条线上'
+        '（比如「OAuth 调试」串了三个星期里的 8 条），提名给你，认不认由你。</p>'
+        '<p class="hint">和「目标」的区别：目标是<em>你想做成什么</em>，'
+        "主题是<em>你实际在忙什么</em>——两个不一样才正常。</p>"
+        "</section>"
+    ]
 
     if 提名们:
         块.append('<h3>等你确认的提名</h3>')
@@ -584,15 +631,18 @@ def 章节列表(
         块.append("</ul>")
     else:
         块.append(
-            空状态("还没有章节。它们在 `life settle` 提名、`life promote` 确认之后才出现。")
+            空状态(
+                "还没有主题。它们是系统归纳出来、经你确认之后才出现的"
+                "（点下面的按钮归纳一次试试）。"
+            )
         )
     块.append('<p class="actions">' + 作业按钮(令牌, "settle", "归纳最近的记录（生成提名）") + "</p>")
     块.append(
-        '<p class="hint">章节不是自动生成的：系统提名，你确认。'
+        '<p class="hint">主题不是自动生成的：系统提名，你确认。'
         "归纳只写提名，不会动你的记录。</p>"
     )
     块.append("</section>")
-    return 布局("章节", "\n".join(块), 活跃="/chapters", 令牌=令牌)
+    return 布局("主题", "\n".join(块), 活跃="/chapters", 令牌=令牌)
 
 
 def 章节详情(令牌: str, 章节: dict, 条目们: list[dict]) -> str:
@@ -616,7 +666,7 @@ def 章节详情(令牌: str, 章节: dict, 条目们: list[dict]) -> str:
             )
         块.append("</ul>")
     else:
-        块.append(空状态("这个章节名下暂时没有记录。"))
+        块.append(空状态("这个主题名下暂时没有记录。"))
     块.append("</section>")
     return 布局(章节["title"], "\n".join(块), 活跃="/chapters", 令牌=令牌)
 

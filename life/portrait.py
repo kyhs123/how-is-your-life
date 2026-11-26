@@ -97,14 +97,14 @@ def _材料(季度: str, 条目们: list[dict], 上季: str) -> str:
     )
 
     章节 = store.全部章节()
-    段.append("\n# 活跃章节（这半年在做什么）")
+    段.append("\n# 活跃主题（这半年在做什么）")
     段.append(
         "\n".join(
             f"- {c['title']}：{c['entry_count']} 条记录，最高 {c['level_max']} 档"
             for c in 章节
         )
         if 章节
-        else "（还没有章节）"
+        else "（还没有主题）"
     )
 
     统计 = 情绪统计(条目们)

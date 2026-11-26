@@ -40,6 +40,7 @@ def 记录一条(
     保留图片: bool = False,
     用假模型: bool = False,
     时间: str = "",
+    目标: str = "",
     提示: 提示函数 | None = None,
 ) -> dict:
     """记一条。返回结果字典，调用方负责把结果变成屏幕上的一句话。
@@ -55,6 +56,9 @@ def 记录一条(
           "收件": Path | None,        # inbox 里那个 json
           "错误": str,
         }
+
+    目标：给了就把这条记在那个目标名下（`goal` 字段直接写成它），不问模型。
+    这是「在目标页上直接记一条」用的——用户已经说了属于哪个目标，再让模型猜一遍没有意义。
     """
     说 = 提示 or _不说
 
@@ -147,6 +151,7 @@ def 记录一条(
         "ts": store.时间文本(此刻),
         "kind": 种类,
         "when": 时间.strip(),
+        "目标": 目标.strip(),
         "原文": 原文,
         "部分": "emotion" if 情感 else "record",
         "private": 私密,
@@ -245,8 +250,12 @@ def 抽取并保存(
 
         时间 = datetime.fromisoformat(输入["ts"])
         路径们: list[Path] = []
+        目标 = (输入.get("目标") or "").strip()
         for 一条 in 结果["entries"]:
             记录id, 时间 = store.分配id(时间)
+            if 目标:
+                # 用户在目标页上记的：这条就是那个目标的证据，不用模型再猜一次。
+                一条 = {**一条, "goal": 目标}
             条目 = store.新建条目(
                 id=记录id,
                 ts=store.时间文本(时间),

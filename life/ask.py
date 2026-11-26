@@ -164,7 +164,7 @@ def _章节标题() -> str:
                 break
         标题们.append(f"- {标题}")
     if not 标题们:
-        return "（还没有章节。章节是第 3 周才有的。）"
+        return "（还没有主题。主题是归纳出来、经你确认之后才有的。）"
     return "\n".join(标题们)
 
 

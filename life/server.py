@@ -22,7 +22,7 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Callable
 
-from life import config, goal, index, jobs, pages, portrait, promote, recorder, retrieve, review, store, tidy
+from life import config, goal, index, jobs, pages, portrait, promote, recorder, retrieve, store, tidy
 from life import uploads as uploads模块
 
 最大请求体 = 64 * 1024  # 64KB。表单填不出一百个字，再大多半是攻击
@@ -39,7 +39,7 @@ def _连接():
 def _全部条目() -> list[dict]:
     """所有记录，新的在前。**包含私密记录**——这是你自己的电脑，藏起来反而奇怪。
 
-    私密记录只是不进「提问 / 画像 / 回顾 / 提名」这些会「翻出来」的地方（DESIGN §8）。
+    私密记录只是不进「提问 / 画像 / 提名」这些会「翻出来」的地方（DESIGN §8）。
     """
     连接 = _连接()
     try:
@@ -55,6 +55,19 @@ def _写回索引(条目: dict) -> None:
         index.写入条目(连接, 条目)
     finally:
         连接.close()
+
+
+def _安全的回退(值: str) -> str:
+    """表单里的「记完回哪一页」，只认本机的站内路径。
+
+    带域名的一律丢掉（`https://别的网站/x`、`//别的网站/x`）——
+    不然别人能拿你的页面当跳板，把人送到自己那儿去。
+    """
+    解析 = urllib.parse.urlparse(值.strip())
+    if 解析.scheme or 解析.netloc:
+        return ""
+    路径 = 解析.path
+    return 路径 if 路径.startswith("/") else ""
 
 
 def _统计() -> dict:
@@ -281,10 +294,6 @@ class 处理器(BaseHTTPRequestHandler):
             self._章节页(urllib.parse.unquote(路径[len("/chapters/") :]))
         elif 路径 == "/portrait":
             self._画像页()
-        elif 路径 == "/review":
-            self._回顾页()
-        elif 路径 == "/review/latest":
-            self._回顾文件()
         elif 路径.startswith("/jobs/"):
             self._任务页(urllib.parse.unquote(路径[len("/jobs/") :]))
         elif 路径 == "/settings":
@@ -371,7 +380,9 @@ class 处理器(BaseHTTPRequestHandler):
         证据们 = {目标["id"]: goal.算证据(目标) for 目标 in 目标们}
         self._页面(HTTPStatus.OK, pages.目标列表(self.令牌, 目标们, 证据们))
 
-    def _目标页(self, 尾巴: str) -> None:
+    def _目标页(
+        self, 尾巴: str, *, 提示: str = "", 状态: int = HTTPStatus.OK
+    ) -> None:
         """`/goals/<id>` 看详情，`/goals/<id>/编辑` 出表单。"""
         编辑 = 尾巴.endswith("/编辑")
         标识 = 尾巴[: -len("/编辑")] if 编辑 else 尾巴
@@ -383,14 +394,23 @@ class 处理器(BaseHTTPRequestHandler):
         if 编辑:
             self._页面(HTTPStatus.OK, pages.目标表单(self.令牌, 目标))
         else:
-            self._页面(HTTPStatus.OK, pages.目标详情(self.令牌, 目标, goal.算证据(目标)))
+            self._页面(
+                状态,
+                pages.目标详情(
+                    self.令牌,
+                    目标,
+                    goal.算证据(目标),
+                    提示=提示,
+                    提示是错误=状态 >= HTTPStatus.BAD_REQUEST,
+                ),
+            )
 
     def _章节页(self, 标识: str) -> None:
         目标章节 = next(
             (c for c in store.全部章节() if c["id"] == 标识 or c["title"] == 标识), None
         )
         if 目标章节 is None:
-            self._出错(HTTPStatus.NOT_FOUND, "找不到这个章节", f"id：{标识}")
+            self._出错(HTTPStatus.NOT_FOUND, "找不到这个主题", f"id：{标识}")
             return
         条目们 = [e for e in _全部条目() if e["chapter"] == 目标章节["id"]]
         self._页面(HTTPStatus.OK, pages.章节详情(self.令牌, 目标章节, 条目们))
@@ -413,41 +433,6 @@ class 处理器(BaseHTTPRequestHandler):
             ),
         )
 
-    def _回顾页(self) -> None:
-        from life import review
-
-        起, 止, 标签 = review.区间(周=True)
-        数据 = review.收集(起, 止)
-        摘要 = [
-            f"## {标签}",
-            "",
-            f"- {len(数据['条目们'])} 条记录，投入约 {数据['分钟'] / 60:.0f} 小时",
-            "- 证据分布："
-            + "、".join(f"{pages.档位名[档]} {数据['分布'].get(档, 0)}" for 档 in (3, 2, 1, 0)),
-            "- 和上一段比：" + review._变化文字(数据["分布"], 数据["上一段分布"]),
-            "- 晋升事件：" + (f"{len(数据['事件'])} 条" if 数据["事件"] else "没有"),
-        ]
-        self._页面(
-            HTTPStatus.OK,
-            pages.只读文本页(
-                self.令牌,
-                标题="回顾（最近七天）",
-                地址="/review",
-                正文="\n".join(摘要),
-                命令="life review --week",
-                说明=(
-                    "上面是马上能算出来的数据。"
-                    "带叙述的完整回顾要调模型，点按钮后台跑，写完存在 vault/review/。"
-                ),
-                按钮=pages.作业按钮(self.令牌, "review", "生成带叙述的回顾")
-                + (
-                    " <a class=\"btn plain\" href=\"/review/latest\">看上次生成的</a>"
-                    if (store.确保vault就绪() / "review").glob("*.html")
-                    else ""
-                ),
-            ),
-        )
-
     # ── 后台任务（docs/WEBUI.md §2.6）──
 
     def _任务页(self, 任务号: str) -> None:
@@ -460,7 +445,6 @@ class 处理器(BaseHTTPRequestHandler):
     def _起作业(self, 动作: str) -> None:
         表 = {
             "portrait": ("生成季度画像", self._作业画像, "/portrait"),
-            "review": ("生成带叙述的回顾", self._作业回顾, "/review"),
             "settle": ("归纳最近的记录", self._作业提名, "/chapters"),
             "reindex": ("重建索引", self._作业索引, "/settings"),
             "retry": ("补抽没抽成的记录", self._作业补抽, "/"),
@@ -480,14 +464,6 @@ class 处理器(BaseHTTPRequestHandler):
         if 结果["缺依据的假设"]:
             尾巴 = f"，其中 {len(结果['缺依据的假设'])} 条假设没写依据（多半是场面话）"
         return f"{结果['季度']} 画像已生成（{结果['token']} token）{尾巴}"
-
-    def _作业回顾(self) -> str:
-        文本, 数据 = review.生成(周=True, 用HTML=True)
-        目录 = store.确保vault就绪() / "review"
-        目录.mkdir(parents=True, exist_ok=True)
-        路径 = 目录 / f"{store.现在().date().isoformat()}-周回顾.html"
-        路径.write_text(文本, encoding="utf-8")
-        return f"写好了 {len(数据['条目们'])} 条记录的回顾：vault/review/{路径.name}"
 
     def _作业提名(self) -> str:
         结果 = promote.提名()
@@ -511,21 +487,6 @@ class 处理器(BaseHTTPRequestHandler):
     def _作业索引(self) -> str:
         结果 = index.重建索引()
         return f"扫描 {结果['扫描']} 个文件，写入 {结果['成功']} 条记录"
-
-    def _回顾文件(self) -> None:
-        """把最近生成的那份回顾 HTML 直接发给浏览器。"""
-        目录 = store.确保vault就绪() / "review"
-        文件们 = sorted(目录.glob("*.html"))
-        if not 文件们:
-            self._出错(HTTPStatus.NOT_FOUND, "还没生成过回顾", "回回顾页点一下「生成」。")
-            return
-        数据 = 文件们[-1].read_bytes()
-        self.send_response(HTTPStatus.OK)
-        self.send_header("Content-Type", "text/html; charset=utf-8")
-        self.send_header("Content-Length", str(len(数据)))
-        self.send_header("Cache-Control", "no-store")
-        self.end_headers()
-        self.wfile.write(数据)
 
     def _设置页(self) -> None:
         from life import llm
@@ -580,8 +541,24 @@ class 处理器(BaseHTTPRequestHandler):
 
     # ── POST ──
 
+    def _丢弃请求体(self) -> None:
+        """拒绝之前先把人家发来的东西读掉。
+
+        不读就直接关连接，Windows 上会发 RST——浏览器看到的不是我们的 403，
+        而是「连接被中止」（实测偶发，一整套测试连跑时更容易撞上）。
+        **拒绝也要拒绝得干净。**
+        """
+        长度 = int(self.headers.get("Content-Length") or 0)
+        if 长度 <= 0 or 长度 > uploads模块.最大整体字节:
+            return
+        try:
+            self.rfile.read(长度)
+        except OSError:
+            pass
+
     def _处理POST(self) -> None:
         if not self._来源合法():
+            self._丢弃请求体()
             self._出错(
                 HTTPStatus.FORBIDDEN,
                 "拒绝了",
@@ -624,15 +601,24 @@ class 处理器(BaseHTTPRequestHandler):
         原文 = (表单.get("text") or "").strip()
         文件们 = 文件们 or []
         保留原文件 = 表单.get("keep") == "1"
+        目标 = (表单.get("goal") or "").strip()
+        回退 = _安全的回退(表单.get("back") or "")
+
+        def 说话(提示: str, 状态: int = HTTPStatus.OK) -> None:
+            """有话说的时候回到用户刚才那一页，别把人甩到首页去。"""
+            if 回退:
+                self._回到(回退, 提示, 状态)
+            else:
+                self._今天(提示, 状态=状态)
 
         if not 原文 and not 文件们:
-            self._今天("什么都没写，也没选文件。再试一次？", 状态=HTTPStatus.BAD_REQUEST)
+            说话("什么都没写，也没选文件。再试一次？", HTTPStatus.BAD_REQUEST)
             return
 
         try:
             某天, 时间说明 = recorder.解析过去时间(表单.get("when", ""))
         except ValueError as 错误:
-            self._今天(str(错误), 状态=HTTPStatus.BAD_REQUEST)
+            说话(str(错误), HTTPStatus.BAD_REQUEST)
             return
         时间备注 = ""
         if 表单.get("when", "").strip():
@@ -645,7 +631,7 @@ class 处理器(BaseHTTPRequestHandler):
                 try:
                     类型, 后缀 = uploads模块.判定(文件["文件名"], 文件["数据"])
                 except uploads模块.上传错误 as 错误:
-                    self._今天(str(错误), 状态=HTTPStatus.BAD_REQUEST)
+                    说话(str(错误), HTTPStatus.BAD_REQUEST)
                     return
 
                 临时 = self._存上传(文件["数据"], 后缀)
@@ -659,6 +645,7 @@ class 处理器(BaseHTTPRequestHandler):
                     时间=表单.get("when", ""),
                     情感=表单.get("emotion") == "1",
                     私密=表单.get("private") == "1",
+                    目标=目标,
                     提示=lambda _: None,
                 )
             else:
@@ -667,6 +654,7 @@ class 处理器(BaseHTTPRequestHandler):
                     时间=表单.get("when", ""),
                     情感=表单.get("emotion") == "1",
                     私密=表单.get("private") == "1",
+                    目标=目标,
                     提示=lambda _: None,
                 )
         finally:
@@ -675,20 +663,27 @@ class 处理器(BaseHTTPRequestHandler):
                 临时.unlink(missing_ok=True)
 
         if 结果["状态"] == "输入有问题":
-            self._今天(结果["错误"], 状态=HTTPStatus.BAD_REQUEST)
+            说话(结果["错误"], HTTPStatus.BAD_REQUEST)
         elif 结果["状态"] == "配置错误":
-            self._今天("已存好，但模型没配好，没法压缩。配好之后跑 life retry。")
+            说话("已存好，但模型没配好，没法压缩。配好之后跑 life retry。")
         elif 结果["状态"] == "抽取失败":
-            self._今天(
-                f"已存好，但抽取没成功（{结果['错误'][:80]}）。联网后跑 life retry 就能补上。"
-            )
+            说话(f"已存好，但抽取没成功（{结果['错误'][:80]}）。联网后跑 life retry 就能补上。")
         elif 结果["状态"] == "重复":
-            self._今天("这条之前记过了，没重复存。")
+            说话("这条之前记过了，没重复存。")
         else:
             if 时间备注:
-                self._今天(时间备注.strip(), 状态=HTTPStatus.OK)
+                说话(时间备注.strip())
             else:
-                self._跳("/")
+                # 记完就回原地：在目标页记的，回目标页，一眼看到新证据
+                self._跳(回退 or "/")
+
+    def _回到(self, 回退: str, 提示: str, 状态: int = HTTPStatus.OK) -> None:
+        """「回到你刚才那一页，话显示在那儿」。现在认得目标页，其它一律回首页。"""
+        if 回退.startswith("/goals/") and not 回退.endswith("/编辑"):
+            # 表单里带的是编码过的地址（中文目标名），这里要先解开
+            self._目标页(urllib.parse.unquote(回退[len("/goals/") :]), 提示=提示, 状态=状态)
+        else:
+            self._今天(提示, 状态=状态)
 
     def _存上传(self, 数据: bytes, 后缀: str) -> Path:
         """把上传的东西写进 vault 的暂存目录。文件名一律自己取，不用用户给的名字。"""
@@ -809,9 +804,21 @@ class 处理器(BaseHTTPRequestHandler):
 # ── 启动 ─────────────────────────────────────────────────────
 
 
+class 本机服务器(ThreadingHTTPServer):
+    """把「端口复用」这个开关按平台分开。
+
+    Windows 上 SO_REUSEADDR 的语义和 Linux 不一样：它允许**抢**别人已经占着的端口，
+    抢到之后对方的连接就全跑到我们这儿来了。所以 Windows 上必须关掉——
+    端口真被占了就老老实实报错，而不是把别人的服务弄瘫。
+    """
+
+    daemon_threads = True
+    allow_reuse_address = sys.platform != "win32"
+
+
 def 造服务器(端口: int = 8770) -> ThreadingHTTPServer:
     """只绑 127.0.0.1。端口传 0 = 让系统随便给一个（测试用）。"""
-    服务器 = ThreadingHTTPServer(("127.0.0.1", int(端口)), 处理器)
+    服务器 = 本机服务器(("127.0.0.1", int(端口)), 处理器)
     服务器.daemon_threads = True
     实际端口 = 服务器.server_address[1]
     处理器.令牌 = secrets.token_urlsafe(24)
@@ -823,14 +830,40 @@ def 造服务器(端口: int = 8770) -> ThreadingHTTPServer:
     return 服务器
 
 
+def 已经在运行(端口: int) -> bool:
+    """这个端口上是不是已经有一个「我们自己的」网页界面在跑。
+
+    为什么要问这个：双击「启动.bat」第二次的时候，不该看到「端口被占」这种报错，
+    而是应该把浏览器叫出来。判断办法是**真去要一次首页**，看回来的是不是我们的页面——
+    不能只看端口有没有被占，因为那可能是别的程序。
+    """
+    import urllib.request
+
+    try:
+        with urllib.request.urlopen(f"http://127.0.0.1:{端口}/", timeout=2) as 应答:
+            页面 = 应答.read(4096).decode("utf-8", "replace")
+    except (OSError, ValueError):
+        return False
+    return "你过得怎么样" in 页面
+
+
 def 启动(端口: int = 8770, *, 打开浏览器: bool = False) -> None:
     import webbrowser
+
+    地址 = f"http://127.0.0.1:{端口}/"
+    if 已经在运行(端口):
+        print(f"· 网页界面已经开着了：{地址}")
+        print("· 不用再开一个。想退出，去关掉那个黑窗口。")
+        if 打开浏览器:
+            webbrowser.open(地址)
+        return
 
     服务器 = 造服务器(端口)
     地址 = f"http://127.0.0.1:{服务器.server_address[1]}/"
     print(f"· 网页界面已启动：{地址}")
     print("· 只绑在本机 127.0.0.1，局域网里的其它机器连不上。")
-    print("· 按 Ctrl+C 停止。")
+    print("· 想退出：直接关掉这个窗口。")
+    print("· 要是按了 Ctrl+C，黑窗口会问 Terminate batch job (Y/N)：打 Y 再回车就退出了。")
     if 打开浏览器:
         webbrowser.open(地址)
     try:

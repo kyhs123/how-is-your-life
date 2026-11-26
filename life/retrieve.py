@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import math
+import re
 import sqlite3
 from datetime import timedelta
 
@@ -62,6 +63,7 @@ from life import config, index, llm, store
 )
 
 每路条数 = 10  # §4.3：三路各取 10 条
+时间路条数 = 30  # 「这周做了什么」这种问法，10 条不够：一周本来就可能记十几条
 
 
 def 召回(
@@ -106,7 +108,10 @@ def 召回(
         诊断["结构走了哪几条"] = 结构说明
 
         # ── 合并 ──
-        结果 = _合并(连接, {"向量": 编号们, "全文": 全文编号, "结构": 结构编号}, 取几条)
+        # 问「这周做了什么」的时候，一周的记录本来就比 8 条多，
+        # 只给 8 条会让它漏掉后面的事。这种问法放宽到时间路的上限。
+        需要条数 = max(取几条, 时间路条数) if _时间段(查询) else 取几条
+        结果 = _合并(连接, {"向量": 编号们, "全文": 全文编号, "结构": 结构编号}, 需要条数)
         诊断["总数"] = len(结果)
     finally:
         连接.close()
@@ -265,10 +270,82 @@ def _fts查询式(查询: str) -> str:
 # ── 路 3：结构（时间与情绪）──────────────────────────────────
 
 
+_中文数字 = {"一": 1, "两": 2, "二": 2, "三": 3, "四": 4, "五": 5,
+          "六": 6, "七": 7, "八": 8, "九": 9, "十": 10}
+
+
+def _数字(文本: str) -> int:
+    """「3」和「三」都认。只认一位数和十，够用了。"""
+    if 文本.isdigit():
+        return int(文本)
+    if 文本 == "十":
+        return 10
+    return _中文数字.get(文本, 0)
+
+
+def _时间段(查询: str) -> tuple[str, str, str] | None:
+    """认出「今天 / 昨天 / 这周 / 上周 / 这个月 / 上个月 / 最近三天」这类说法。
+
+    返回（起, 止, 说明），起止是 2026-11-26 这种字符串；认不出返回 None。
+
+    为什么要有这一路：用户问「我这周都做了什么」时，字面上和任何一条记录都不像
+    （记录里没人写「这周」），三路全空，最后只能兜底给最近三条——那不叫回答。
+    时间是最容易被忽略的一种「查询条件」。
+    """
+    今天 = store.现在().date()
+
+    if "今天" in 查询:
+        return 今天.isoformat(), 今天.isoformat(), "今天的记录"
+    if "昨天" in 查询:
+        昨天 = 今天 - timedelta(days=1)
+        return 昨天.isoformat(), 昨天.isoformat(), "昨天的记录"
+
+    if any(词 in 查询 for 词 in ("这周", "本周", "这星期", "这个星期", "最近一周")):
+        周一 = 今天 - timedelta(days=今天.weekday())
+        return 周一.isoformat(), 今天.isoformat(), "这周（从周一算起）的记录"
+    if any(词 in 查询 for 词 in ("上周", "上个星期", "上一周", "上星期")):
+        周一 = 今天 - timedelta(days=今天.weekday() + 7)
+        return 周一.isoformat(), (周一 + timedelta(days=6)).isoformat(), "上周的记录"
+
+    if any(词 in 查询 for 词 in ("这个月", "本月", "这一个月")):
+        return 今天.replace(day=1).isoformat(), 今天.isoformat(), "这个月的记录"
+    if any(词 in 查询 for 词 in ("上个月", "上月")):
+        上月末 = 今天.replace(day=1) - timedelta(days=1)
+        return 上月末.replace(day=1).isoformat(), 上月末.isoformat(), "上个月的记录"
+
+    匹配 = re.search(r"最近\s*([0-9一二两三四五六七八九十]+)\s*(天|日|个?星期|个?周)", 查询)
+    if 匹配:
+        几 = _数字(匹配.group(1))
+        if 几 > 0:
+            起 = 今天 - timedelta(days=几 - 1)
+            return 起.isoformat(), 今天.isoformat(), f"最近 {几} 天的记录"
+
+    return None
+
+
 def _结构路(连接: sqlite3.Connection, 查询: str) -> tuple[list[str], list[str]]:
     """按 DESIGN.md §4.3 里那三条 SQL 走。返回（编号们，走了哪几条的说明）。"""
     编号们: list[str] = []
     走了: list[str] = []
+
+    # ⓪ 「这周 / 上周 / 最近三天」——按时间捞，不管字面像不像
+    时段 = _时间段(查询)
+    if 时段:
+        起, 止, 说明 = 时段
+        走了.append(说明)
+        # 补记的旧事（when = 「大学期间」这种）不算进这个窗口：
+        # 它们的 ts 是「补记那天」，拿来看「这周做了什么」会把整份简历都算成这周。
+        # 只有 when 本身就是完整日期、且落在窗口里的，才跟着算。
+        for 行 in 连接.execute(
+            "SELECT id FROM entries WHERE private = 0 "
+            "AND substr(ts, 1, 10) BETWEEN ? AND ? "
+            'AND ("when" IS NULL OR "when" = \'\' OR ('
+            "  \"when\" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]*' "
+            '  AND substr("when", 1, 10) BETWEEN ? AND ?)) '
+            "ORDER BY ts DESC LIMIT ?",
+            (起, 止, 起, 止, 时间路条数),
+        ):
+            编号们.append(行["id"])
 
     # ① 上次说类似的话是什么时候（情绪极点倒序）
     if any(词 in 查询 for 词 in 情绪词):

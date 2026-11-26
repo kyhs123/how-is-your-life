@@ -1,3 +1,6 @@
 # 钩子脚本必须是 LF，否则 sh 会在 shebang 行报错（新克隆时尤其明显）
 .githooks/* text eol=lf
 *.sh text eol=lf
+
+# .bat 必须是 CRLF，否则 cmd 解析 goto 标签和中文 echo 会出问题
+*.bat text eol=crlf

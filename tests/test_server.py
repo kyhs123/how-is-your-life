@@ -128,8 +128,10 @@ def test_首页有记一条的入口(临时工作区, 站):
     assert "记一条" in 页面
     assert 'action="/add"' in 页面
     assert "最近七天" in 页面
-    for 名 in ("今天", "记录", "提问", "目标", "章节", "画像", "回顾", "设置"):
+    for 名 in ("今天", "记录", "提问", "目标", "主题", "画像", "设置"):
         assert f">{名}</a>" in 页面
+    assert ">回顾</a>" not in 页面, "回顾这一栏已经去掉了：想知道这周做了什么，问一句就够"
+    assert ">章节</a>" not in 页面, "「章节」这个词没人看得懂，改叫「主题」"
 
 
 def test_在页面上记一条(临时工作区, 站, 假抽取):
@@ -241,6 +243,77 @@ def test_目标详情有证据卡(临时工作区, 站):
     assert "完成度" not in 页面 and "进度条" not in 页面 and "连续" not in 页面
 
 
+def test_在目标页上直接记一条就成了它的证据(临时工作区, 站, 假抽取):
+    """用户的原话：「和目标有关的信息都能在目标里提交，然后记录」。
+
+    从目标页记的东西必须立刻算成这个目标的证据——不用回首页，也不用自己把名字对上。
+    """
+    请求(站, "POST", "/goals/new", 表单={"token": 令牌(站), "title": "找到实习"})
+    目标 = store.全部目标()[0]
+
+    状态, _, 位置 = 请求(
+        站,
+        "POST",
+        "/add",
+        表单={
+            "token": 令牌(站),
+            "text": "投了三家实习，第二家做完笔试",
+            "goal": 目标["title"],
+            # 页面上的隐藏字段是这个样子（中文目标名要编码）
+            "back": "/goals/" + urllib.parse.quote(目标["id"]),
+        },
+    )
+    assert 状态 == 303, "记完应该跳走（PRG）"
+    assert urllib.parse.unquote(位置) == f"/goals/{目标['id']}", "应该回到这个目标页"
+
+    状态, 页面, _ = 请求(站, "GET", "/goals/" + urllib.parse.quote(目标["id"]))
+    assert 状态 == 200
+    assert "1 条记录" in 页面, "刚记的那条要算成证据"
+    assert "投了三家实习" in 页面
+
+    条目 = store.读条目(sorted((临时工作区 / "vault" / "now").rglob("*.md"))[0])
+    assert 条目["goal"] == "找到实习", "goal 字段要直接写成目标标题，不问模型"
+
+
+def test_目标页提交失败时留在目标页并说明原因(临时工作区, 站, 假抽取):
+    """写错了不该被甩回首页——话要出现在你刚才那一页上。"""
+    请求(站, "POST", "/goals/new", 表单={"token": 令牌(站), "title": "找到实习"})
+    目标 = store.全部目标()[0]
+
+    状态, 页面, _ = 请求(
+        站,
+        "POST",
+        "/add",
+        表单={
+            "token": 令牌(站),
+            "text": "明天要做的事",
+            "when": "2999-01-01",
+            "goal": 目标["title"],
+            "back": "/goals/" + urllib.parse.quote(目标["id"]),
+        },
+    )
+    assert 状态 == 400
+    assert "未来" in 页面, "要给出现在为什么不行"
+    assert "往「找到实习」里记一条" in 页面, "而且要还在这个目标页上"
+    assert not list((临时工作区 / "vault" / "now").rglob("*.md")), "失败的提交不能留下记录"
+
+
+def test_记完回跳只认站内路径(临时工作区, 站, 假抽取):
+    """表单里的 back 被改成外站地址时，不能拿我们的页面当跳板。"""
+    状态, _, 位置 = 请求(
+        站,
+        "POST",
+        "/add",
+        表单={
+            "token": 令牌(站),
+            "text": "随便记一条",
+            "back": "https://example.com/骗你点这里",
+        },
+    )
+    assert 状态 == 303
+    assert 位置 == "/", f"外站地址要被丢掉，实际跳到：{位置}"
+
+
 # ── M1：记录列表 / 单条编辑 ──────────────────────────────────
 
 
@@ -336,10 +409,12 @@ def test_提问页能出回答(临时工作区, 站, monkeypatch):
     assert "只看报错" in 页面
 
 
-def test_章节页(临时工作区, 站):
+def test_主题页(临时工作区, 站):
+    """「章节」这个词谁都不懂。页面上得先用人话解释它是什么。"""
     状态, 空页面, _ = 请求(站, "GET", "/chapters")
     assert 状态 == 200
-    assert "还没有章节" in 空页面
+    assert "还没有主题" in 空页面
+    assert "目标是" in 空页面 and "主题是" in 空页面, "两个词的区别要写在页面上"
 
     章节 = store.新建章节(title="OAuth 调试", entry_count=2, level_max=2)
     store.写章节(章节)
@@ -369,12 +444,19 @@ def test_画像页显示最近一份(临时工作区, 站):
     assert "life portrait" in 页面
 
 
-def test_回顾页给出数据和命令(临时工作区, 站):
+def test_没有回顾这个板块了(临时工作区, 站):
+    """用户说：想知道最近一周做了什么，直接在提问里问就行，不需要单独一页。
+
+    所以 /review 该 404，而且不该再有任何入口指向它。
+    """
     造记录("本周的一条", 天前=1)
-    _, 页面, _ = 请求(站, "GET", "/review")
-    assert "最近七天" in 页面
-    assert "证据分布" in 页面
-    assert "life review --week" in 页面
+
+    状态, 页面, _ = 请求(站, "GET", "/review")
+    assert 状态 == 404
+    assert "没有这个页面" in 页面
+
+    _, 首页, _ = 请求(站, "GET", "/")
+    assert 'href="/review' not in 首页
 
 
 def test_设置页显示路径和模型(临时工作区, 站):
@@ -426,7 +508,7 @@ def test_所有页面都没有外部资源(临时工作区, 站):
 
     路径们 = [
         "/", "/entries", "/ask", "/goals", "/goals/new", "/chapters",
-        "/portrait", "/review", "/settings",
+        "/portrait", "/settings",
     ]
     for 路径 in 路径们:
         状态, 页面, _ = 请求(站, "GET", 路径)
@@ -918,3 +1000,51 @@ def test_校验提示不混进回答正文(临时工作区, 站, monkeypatch):
     assert 回答块, "应该有回答卡片"
     assert "没做到" not in 回答块.group(1), "系统提示不能混进回答正文"
     assert "没有出现任何一条记录的真实日期" in 页面, "但要单独显示给用户看"
+
+
+# ── 启动（双击「启动.bat」背后发生的事）──────────────────────
+
+
+def test_已经开着的时候再启动一次不报错(临时工作区):
+    """双击第二次该把浏览器叫出来，而不是甩一句「端口被占」。
+
+    用户不会知道「端口」是什么，报错只会让他以为坏了。
+    """
+    from typer.testing import CliRunner
+
+    from life import cli
+
+    服务器 = server模块.造服务器(0)
+    端口 = 服务器.server_address[1]
+    threading.Thread(target=服务器.serve_forever, daemon=True).start()
+    try:
+        结果 = CliRunner().invoke(cli.app, ["server", "--port", str(端口)])
+    finally:
+        服务器.shutdown()
+        服务器.server_close()
+
+    assert 结果.exit_code == 0, f"不该失败：{结果.output}"
+    assert "已经开着了" in 结果.output
+
+
+def test_端口被别的程序占着时说清楚怎么办(临时工作区):
+    """真被别人占了（不是我们的页面）→ 老实说清，并给出换端口的命令。"""
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    from typer.testing import CliRunner
+
+    from life import cli
+
+    # 占住一个端口，但回的不是我们的页面（模拟别的软件）
+    占位 = ThreadingHTTPServer(("127.0.0.1", 0), BaseHTTPRequestHandler)
+    端口 = 占位.server_address[1]
+    threading.Thread(target=占位.serve_forever, daemon=True).start()
+    try:
+        结果 = CliRunner().invoke(cli.app, ["server", "--port", str(端口)])
+    finally:
+        占位.shutdown()
+        占位.server_close()
+
+    assert 结果.exit_code == 1
+    assert "用不了" in 结果.output
+    assert "--port" in 结果.output, "要告诉用户换个端口怎么换"

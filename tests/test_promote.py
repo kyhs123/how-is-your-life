@@ -88,7 +88,7 @@ def test_够条件的主题会被提名并写进changelog(临时工作区, monke
     assert "提名：OAuth 调试" in 结果.output
 
     日志 = (临时工作区 / "vault" / "changelog.md").read_text(encoding="utf-8")
-    assert "提名：OAuth 调试 → 章节" in 日志
+    assert "提名：OAuth 调试 → 主题" in 日志
     assert "PR #12" in 日志
 
     # settle 只提名，不能动记录
@@ -140,7 +140,7 @@ def test_确认之后章节文件生成且记录被回填(临时工作区, monke
     assert all(e["chapter"] == "OAuth 调试" for e in 所有条目)
 
     日志 = (临时工作区 / "vault" / "changelog.md").read_text(encoding="utf-8")
-    assert "晋升 OAuth 调试：当下 → 章节「OAuth 调试」" in 日志
+    assert "晋升 OAuth 调试：当下 → 主题「OAuth 调试」" in 日志
     assert "依据：" in 日志
 
 
