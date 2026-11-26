@@ -12,7 +12,7 @@
 | 看板（单文件网页，`life board`） | [看板.md](看板.md) | `life/board.py`、`life/cli.py` |
 | 检索（三路混合） | [检索.md](检索.md) | `life/retrieve.py`、`life/index.py` |
 | 对话（`life ask`） | [对话.md](对话.md) | `life/ask.py`、`life/prompts/ask.md` |
-| 目标（`life goal`） | [目标.md](目标.md) | `life/goal.py`、`life/cli.py` |
+| 目标（`life goal`）+ 问老师 | [目标.md](目标.md) | `life/goal.py`、`life/goalchat.py`、`life/prompts/goal_chat.md` |
 | 固化与晋升（`life settle` / `life promote`） | [晋升.md](晋升.md) | `life/promote.py`、`life/prompts/settle.md` |
 | 画像（`life portrait`） | [画像.md](画像.md) | `life/portrait.py`、`life/prompts/portrait.md` |
 | 回顾（`life review`） | [回顾.md](回顾.md) | `life/review.py`、`life/prompts/review.md` |

@@ -22,7 +22,7 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Callable
 
-from life import config, goal, index, jobs, pages, portrait, promote, recorder, retrieve, store, tidy
+from life import config, goal, goalchat, index, jobs, llm, pages, portrait, promote, recorder, retrieve, store, tidy
 from life import uploads as uploads模块
 
 最大请求体 = 64 * 1024  # 64KB。表单填不出一百个字，再大多半是攻击
@@ -400,10 +400,34 @@ class 处理器(BaseHTTPRequestHandler):
                     self.令牌,
                     目标,
                     goal.算证据(目标),
+                    对话=goalchat.读对话(目标, 最多=6),
                     提示=提示,
                     提示是错误=状态 >= HTTPStatus.BAD_REQUEST,
                 ),
             )
+
+    def _问老师(self, 标识: str, 表单: dict[str, str]) -> None:
+        """目标页上的对话框：同步等模型（十来秒），回来还是这一页。"""
+        try:
+            目标 = goal.找目标(标识)
+        except goal.目标错误 as 错误:
+            self._出错(HTTPStatus.NOT_FOUND, "找不到这个目标", str(错误))
+            return
+
+        问题 = (表单.get("q") or "").strip()
+        if not 问题:
+            self._目标页(目标["id"], 提示="先写一句要问什么。", 状态=HTTPStatus.BAD_REQUEST)
+            return
+
+        try:
+            goalchat.问(目标["id"], 问题)
+        except llm.网络错误 as 错误:
+            self._目标页(目标["id"], 提示=f"这次没问成，网络那头没通：{错误}")
+            return
+        except (llm.模型错误, config.配置错误) as 错误:
+            self._目标页(目标["id"], 提示=f"这次没问成：{错误}")
+            return
+        self._跳(f"/goals/{目标['id']}")
 
     def _章节页(self, 标识: str) -> None:
         目标章节 = next(
@@ -592,6 +616,8 @@ class 处理器(BaseHTTPRequestHandler):
             self._起作业(urllib.parse.unquote(路径[len("/jobs/") :]))
         elif 路径.startswith("/promotions/"):
             self._晋升(urllib.parse.unquote(路径[len("/promotions/") :]))
+        elif 路径.startswith("/goals/") and 路径.endswith("/chat"):
+            self._问老师(urllib.parse.unquote(路径[len("/goals/") : -len("/chat")]), 表单)
         elif 路径.startswith("/goals/"):
             self._改目标(urllib.parse.unquote(路径[len("/goals/") :]), 表单)
         else:

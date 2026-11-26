@@ -359,7 +359,7 @@ def 提问(
     块.append(提示块(错误, 是错误=True))
 
     if 回答:
-        块.append(f'<article class="card answer"><p>{e(回答).replace(chr(10), "<br>")}</p></article>')
+        块.append(f'<article class="card answer">{_多段(回答)}</article>')
 
     # 这句是「我这边没达标」的提示，属于系统消息，**不能混进回答正文**（踩过）
     if 没做到:
@@ -462,12 +462,20 @@ def 目标表单(令牌: str, 目标: dict | None, *, 错误: str = "", 草稿: 
 
 
 def 目标详情(
-    令牌: str, 目标: dict, 证据: dict, *, 提示: str = "", 提示是错误: bool = False
+    令牌: str,
+    目标: dict,
+    证据: dict,
+    *,
+    对话: list[dict] | None = None,
+    提示: str = "",
+    提示是错误: bool = False,
 ) -> str:
-    """证据卡。只写事实：几条、各档几条、拿得出手的是什么、还缺什么。
+    """证据卡 + 问老师 + 这个目标自己的记一条。
 
-    页面底下就是**这个目标自己的记一条**：在这里写的东西，`goal` 字段直接写成目标标题，
-    不问模型。所以「为目标记一件事」不用回首页、也不用记住目标叫什么。
+    证据卡的规矩没变：只写事实（几条、各档几条、拿得出手的、还缺什么），不打分、不给百分比。
+    底下两块都是「把下一步变小」的工具：
+      - **问老师**：带着这个目标的证据问 AI。它只看得见这个目标，所以不会泛泛而谈。
+      - **记一条**：记完 `goal` 直接写成目标标题，立刻变成证据。
     """
     行 = []
     if 提示:
@@ -518,6 +526,8 @@ def 目标详情(
     else:
         行.append(空状态("还没有记录。下面写一条，就是它的证据。"))
 
+    行.append(问老师块(令牌, 目标, 对话 or []))
+
     行.append(
         f"""<section class="记一条">
   <h2>往「{e(目标["title"])}」里记一条</h2>
@@ -547,7 +557,7 @@ def 目标详情(
     )
 
     正文 = f"""<section>
-  <h2>{e(目标["title"])}</h2>
+  <h1>{e(目标["title"])}</h1>
   <p class="meta">{e(目标["started"])} → {e(目标状态名.get(目标["status"], 目标["status"]))}
      ｜ {e(期限名.get(目标["horizon"], 目标["horizon"]))}
      {"｜截止 " + e(目标["due"]) if 目标["due"] else ""}</p>
@@ -558,6 +568,41 @@ def 目标详情(
   <a class="btn plain" href="/goals">回目标列表</a></p>"""
 
     return 布局(目标["title"], 正文, 活跃="/goals", 令牌=令牌)
+
+
+def 问老师块(令牌: str, 目标: dict, 对话: list[dict]) -> str:
+    """「问老师」：对话框 + 三个一键问题。
+
+    为什么给一键问题：大多数时候人不知道该问什么，只会说「我该怎么办」。
+    点一下「我该从哪开始」，比让他先想出一个好问题容易得多。
+    """
+    地址 = f"/goals/{q(目标['id'])}/chat"
+    快问 = "".join(
+        f'<form method="post" action="{地址}" class="inline">'
+        f'<input type="hidden" name="token" value="{e(令牌)}">'
+        f'<input type="hidden" name="q" value="{e(问)}">'
+        f'<button type="submit" class="plain">{e(问)}</button></form>'
+        for 问 in ("我该从哪开始？", "接下来一周做什么？", "我卡住了，帮我拆一下")
+    )
+
+    历史 = []
+    for 轮 in 对话[-3:]:
+        历史.append(f'<p class="问">我：{e(轮.get("问", ""))}</p>')
+        历史.append(f'<article class="card answer">{_多段(轮.get("答", ""))}</article>')
+
+    return f"""<section>
+  <h2>问老师<small>它只看这个目标的证据</small></h2>
+  {''.join(历史) if 历史 else 空状态("还没聊过。问一句试试——点下面的一键问题最省事。")}
+  <div class="快问">{快问}</div>
+  <form method="post" action="{地址}" class="form">
+    <input type="hidden" name="token" value="{e(令牌)}">
+    <label class="sr" for="goal-q">想问什么</label>
+    <textarea id="goal-q" name="q" rows="2" maxlength="600"
+      placeholder="想怎么推进这个目标？比如：我该从哪开始"></textarea>
+    <p class="actions"><button type="submit">问老师</button>
+      <span class="hint">要等十来秒：它先把证据读一遍再答。</span></p>
+  </form>
+</section>"""
 
 
 def 发小时(分钟: int) -> str:
@@ -631,7 +676,7 @@ def 章节列表(
 def 章节详情(令牌: str, 章节: dict, 条目们: list[dict]) -> str:
     块 = [
         f"""<section>
-  <h2>{e(章节["title"])}</h2>
+  <h1>{e(章节["title"])}</h1>
   <p class="meta">{e(章节["started"])} → {e(章节["last_evidence"])}
      ｜ {章节["entry_count"]} 条记录 ｜ 最高 {档位名.get(章节["level_max"], "?")}</p>
   {'<p class="why">' + e(章节["body"]) + "</p>" if 章节["body"] else ""}
@@ -797,6 +842,18 @@ def 空状态(文字: str) -> str:
     return f'<p class="empty">{e(文字)}</p>'
 
 
+def _多段(文字: str) -> str:
+    """模型说的话 → 段落。
+
+    空行分段（每段一个 <p>，段间距由 CSS 给），段内单换行留 <br>。
+    直接 `\\n` 全换 <br> 会在空行处出现两倍行距，读起来散。
+    """
+    段们 = [段.strip() for 段 in str(文字 or "").split("\n\n") if 段.strip()]
+    if not 段们:
+        return "<p></p>"
+    return "".join(f"<p>{e(段).replace(chr(10), '<br>')}</p>" for 段 in 段们)
+
+
 def 消息(令牌: str, 标题: str, 说明: str) -> str:
     块 = [
         f"<section><h2>{e(标题)}</h2>",
@@ -857,8 +914,14 @@ section{margin:0 0 46px}
 .记一条 h2{margin-bottom:20px}
 /* 面板里再用纸色填输入框，不然输入框和面板一个颜色，看不出边界 */
 .记一条 input,.记一条 textarea,.记一条 select{background:var(--纸)}
+/* 目标页的「问老师」：我的问题用等宽小字，回答用答案卡 */
+.问{margin:22px 0 10px;font:400 12px/1.6 var(--等宽);color:var(--墨淡);letter-spacing:.02em}
+.快问{display:flex;flex-wrap:wrap;gap:10px;margin:0 0 22px}
+.快问 button{font-size:12.5px;padding:8px 13px}
 h2{margin:0 0 18px;font:500 19px/1.4 var(--衬线);letter-spacing:.01em}
 h2 small{margin-left:10px;font:400 11.5px/1 var(--等宽);letter-spacing:.12em;color:var(--墨淡)}
+/* 页面主角（目标名、主题名）要比分区标题大一档，不然整页没有层次 */
+h1{margin:0 0 16px;font:500 26px/1.35 var(--衬线);letter-spacing:.01em}
 h3{margin:0 0 10px;font:400 11.5px/1 var(--等宽);letter-spacing:.14em;color:var(--墨淡)}
 h4{margin:22px 0 8px;font:500 15px/1.5 var(--衬线)}
 

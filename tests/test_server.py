@@ -314,6 +314,114 @@ def test_记完回跳只认站内路径(临时工作区, 站, 假抽取):
     assert 位置 == "/", f"外站地址要被丢掉，实际跳到：{位置}"
 
 
+# ── 目标页上的「问老师」──────────────────────────────────────
+
+
+def _假老师(monkeypatch, 收到=None, 回答="你现在三条都是接触档。这周只做一件事：把它改成能给别人看的东西。"):
+    """把模型固定下来，顺便记下它收到了什么（检查上下文用）。"""
+
+    def 调用(任务名, 系统提示, 用户内容, **kw):
+        if 收到 is not None:
+            收到.append({"任务": 任务名, "系统": 系统提示, "用户": 用户内容})
+        return llm.模型回复(
+            文本=回答,
+            输入token=120,
+            输出token=60,
+            模型名="测试",
+            降级到第几级=1,
+        )
+
+    monkeypatch.setattr(llm, "调用", 调用)
+
+
+def _建目标(站, 标题="找到实习") -> dict:
+    请求(站, "POST", "/goals/new", 表单={"token": 令牌(站), "title": 标题})
+    return next(g for g in store.全部目标() if g["title"] == 标题)
+
+
+def test_在目标页问老师会存下这一轮(临时工作区, 站, monkeypatch):
+    """用户的原话：希望目标里能有对话框，AI 像老师一样帮着规划。"""
+    目标 = _建目标(站)
+    _假老师(monkeypatch)
+
+    状态, _, 位置 = 请求(
+        站,
+        "POST",
+        "/goals/" + urllib.parse.quote(目标["id"]) + "/chat",
+        表单={"token": 令牌(站), "q": "我该从哪开始？"},
+    )
+    assert 状态 == 303
+    assert urllib.parse.unquote(位置) == "/goals/" + 目标["id"], "问完还在这个目标页上"
+
+    _, 页面, _ = 请求(站, "GET", "/goals/" + urllib.parse.quote(目标["id"]))
+    assert "我该从哪开始？" in 页面, "我问过的话要留在页面上"
+    assert "这周只做一件事" in 页面, "回答也要在"
+
+    文件 = 临时工作区 / "vault" / "dialogue" / "找到实习.jsonl"
+    assert 文件.exists(), "对话要落盘，不能关掉页面就没了"
+    assert "我该从哪开始" in 文件.read_text(encoding="utf-8")
+
+
+def test_老师只看得见这个目标的证据(临时工作区, 站, monkeypatch):
+    """只给它这个目标的东西：别的目标的事、私密记录，都不该进上下文。"""
+    目标 = _建目标(站)
+    造记录("投了三家实习，第二家做完笔试", 目标="找到实习")
+    造记录("一件跟这个目标无关的事：调通 OAuth")
+    造记录("私密的一条：老板找我谈话", 私密=True, 目标="找到实习")
+
+    收到: list[dict] = []
+    _假老师(monkeypatch, 收到)
+    请求(
+        站,
+        "POST",
+        "/goals/" + urllib.parse.quote(目标["id"]) + "/chat",
+        表单={"token": 令牌(站), "q": "我该从哪开始"},
+    )
+
+    发给模型 = 收到[0]["用户"]
+    assert "投了三家实习" in 发给模型
+    assert "档位分布" in 发给模型, "得让它看见各档几条"
+    assert "调通 OAuth" not in 发给模型, "别的目标的事不该混进来"
+    assert "老板找我谈话" not in 发给模型, "私密记录不发给模型"
+    assert 收到[0]["任务"] == "dialogue"
+
+
+def test_目标页有三个一键问题(临时工作区, 站, monkeypatch):
+    目标 = _建目标(站)
+    _, 页面, _ = 请求(站, "GET", "/goals/" + urllib.parse.quote(目标["id"]))
+    assert "问老师" in 页面
+    for 问题 in ("我该从哪开始？", "接下来一周做什么？", "我卡住了，帮我拆一下"):
+        assert 问题 in 页面, f"一键问题缺了：{问题}"
+
+    _假老师(monkeypatch)
+    状态, 页面2, _ = 请求(
+        站,
+        "POST",
+        "/goals/" + urllib.parse.quote(目标["id"]) + "/chat",
+        表单={"token": 令牌(站), "q": "   "},
+    )
+    assert 状态 == 400
+    assert "先写一句" in 页面2
+
+
+def test_老师答不出来时留在目标页说明原因(临时工作区, 站, monkeypatch):
+    目标 = _建目标(站)
+
+    def 断网(*args, **kwargs):
+        raise llm.网络错误("模拟断网")
+
+    monkeypatch.setattr(llm, "调用", 断网)
+    状态, 页面, _ = 请求(
+        站,
+        "POST",
+        "/goals/" + urllib.parse.quote(目标["id"]) + "/chat",
+        表单={"token": 令牌(站), "q": "我该从哪开始"},
+    )
+    assert 状态 == 200
+    assert "没问成" in 页面
+    assert "往「找到实习」里记一条" in 页面, "失败了也别把人甩走"
+
+
 # ── M1：记录列表 / 单条编辑 ──────────────────────────────────
 
 
