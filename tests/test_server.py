@@ -969,6 +969,63 @@ def test_设置页有重建索引按钮(临时工作区, 站):
     assert 'action="/jobs/reindex"' in 页面
 
 
+# ── 导出（网页入口）────────────────────────────────────────
+
+
+def test_导出页有表单和模板可选(临时工作区, 站):
+    _, 页面, _ = 请求(站, "GET", "/export")
+    assert 'action="/export"' in 页面
+    assert 'name="要求"' in 页面
+    assert "自动认" in 页面, "默认应该是「自动认模板」"
+    for 名 in ("简历", "微博", "自我介绍", "周报"):
+        assert 名 in 页面
+
+
+def test_在网页上导出一份简历(临时工作区, 站, monkeypatch):
+    造记录("独立完成 STM32 竞速小车软硬件", 档=2)
+    _假老师(monkeypatch, 回答="# （待补：姓名）\n\n- 独立完成 STM32 竞速小车")
+
+    状态, _, 位置 = 请求(
+        站,
+        "POST",
+        "/export",
+        表单={"token": 令牌(站), "要求": "我要应聘机器人相关的工作，帮我生成一份简历"},
+    )
+    assert 状态 == 303, "导出要跑二三十秒，得跳任务页"
+    assert 位置.startswith("/jobs/")
+
+    _, 任务页 = _等任务(站, 位置.rsplit("/", 1)[-1])
+    assert "导出好了" in 任务页
+
+    文件们 = list((临时工作区 / "vault" / "导出").glob("*-简历.md"))
+    assert len(文件们) == 1, "应该落一个简历文件"
+
+    _, 导出页, _ = 请求(站, "GET", "/export")
+    assert 文件们[0].name in 导出页, "导过的要列在页面上"
+
+    名字 = urllib.parse.quote(文件们[0].name)
+    _, 正文页, _ = 请求(站, "GET", "/exports/" + 名字)
+    assert "STM32" in 正文页
+
+    状态, 原文, _ = 请求(站, "GET", "/exports/" + 名字 + "?raw=1")
+    assert 状态 == 200
+    assert "STM32" in 原文, "「下载原文件」要拿到纯文本"
+
+
+def test_导出没写要求会留在这一页(临时工作区, 站):
+    状态, 页面, _ = 请求(站, "POST", "/export", 表单={"token": 令牌(站), "要求": "   "})
+    assert 状态 == 400
+    assert "先写一句" in 页面
+    assert 'action="/export"' in 页面, "要留在导出页，别把人甩走"
+
+
+def test_导出的文件名不能越出目录(临时工作区, 站):
+    for 名 in ("../.env", "..%2F.env", "占位.md", "20261126-1547-简历.exe"):
+        状态, 页面, _ = 请求(站, "GET", "/exports/" + urllib.parse.quote(名, safe="/"))
+        assert 状态 == 404, f"{名} 不该能读"
+        assert "没有这个文件" in 页面
+
+
 def test_认识不了的任务名给404(临时工作区, 站):
     状态, 页面, _ = 请求(
         站, "POST", "/jobs/" + urllib.parse.quote("乱写"), 表单={"token": 令牌(站)}

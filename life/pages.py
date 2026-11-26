@@ -27,6 +27,7 @@ import urllib.parse
     ("/goals", "目标"),
     ("/chapters", "主题"),
     ("/portrait", "画像"),
+    ("/export", "导出"),
     ("/settings", "设置"),
 ]
 
@@ -737,6 +738,12 @@ def _简易markdown(文本: str) -> str:
                 段.append("</ul>")
                 在列表 = False
             段.append(f"<h4>{e(行[4:])}</h4>")
+        elif 行.startswith("# "):
+            # 导出物里的 `#` 是「这是谁」——简历的名字，要能一眼看见
+            if 在列表:
+                段.append("</ul>")
+                在列表 = False
+            段.append(f'<p class="大标题">{e(行[2:])}</p>')
         elif 行.startswith("## "):
             if 在列表:
                 段.append("</ul>")
@@ -747,6 +754,11 @@ def _简易markdown(文本: str) -> str:
                 段.append("<ul>")
                 在列表 = True
             段.append(f"<li>{e(行[2:])}</li>")
+        elif 行.startswith("> "):
+            if 在列表:
+                段.append("</ul>")
+                在列表 = False
+            段.append(f'<p class="notice">{e(行[2:])}</p>')
         elif not 行.strip():
             if 在列表:
                 段.append("</ul>")
@@ -759,6 +771,81 @@ def _简易markdown(文本: str) -> str:
     if 在列表:
         段.append("</ul>")
     return "\n".join(段)
+
+
+# ── 导出 ─────────────────────────────────────────────────────
+
+
+def 导出页(
+    令牌: str,
+    模板名们: list[str],
+    *,
+    上次们: list[dict] | None = None,
+    提示: str = "",
+    草稿: str = "",
+) -> str:
+    """一句话 + 一个模板，导出成能直接用的文件。
+
+    模板默认「自动认」——大多数人不会先想「我该选哪个模板」，
+    他们会直接说「我要应聘机器人相关的工作」。
+    """
+    上次们 = 上次们 or []
+    选项 = '  <option value="">自动认（从你那句话里判断）</option>'
+    选项 += "".join(f'  <option value="{e(名)}">{e(名)}</option>' for 名 in 模板名们)
+
+    列表 = []
+    for 文件 in 上次们[:8]:
+        列表.append(
+            f'<li><a href="/exports/{q(文件["名字"])}">'
+            f'<span class="when">{e(文件["时间"])}</span>'
+            f'<span class="did">{e(文件["名字"])}</span></a></li>'
+        )
+
+    正文 = f"""<section>
+  <h2>导出<small>把记录变成能直接用的东西</small></h2>
+  {提示块(提示, 是错误=bool(提示))}
+  <p class="hint 说明">说清你要什么就行：给谁看、什么方向、多长。它只挑拿得出手的记录，
+    记录里没有的会留成「（待补：…）」，不会替你编。</p>
+  <form method="post" action="/export" class="form">
+    <input type="hidden" name="token" value="{e(令牌)}">
+    <label>你要什么
+      <textarea name="要求" rows="3" maxlength="600"
+        placeholder="比如：我要应聘机器人相关的工作，帮我生成一份简历">{e(草稿)}</textarea>
+    </label>
+    <label>模板 <select name="模板">{选项}</select></label>
+    <p class="actions"><button type="submit">导出</button>
+      <span class="hint">要跑二三十秒：它得先挑素材再写。跑完回这一页。</span></p>
+  </form>
+  <p class="hint">命令行等价：<code>life export "…"</code>（加 <code>--dry-run</code> 只看挑了什么素材）</p>
+</section>
+<section>
+  <h3>导过的</h3>
+  {'<ul class="流">' + ''.join(列表) + '</ul>' if 列表 else 空状态('还没导出过。')}
+</section>"""
+    return 布局("导出", 正文, 活跃="/export", 令牌=令牌)
+
+
+def 导出物(令牌: str, 名字: str, 正文: str) -> str:
+    """看一份导出物。
+
+    markdown 的按段落渲染出来（直接显示 `##` 和 `-` 太丑），原文件随时能下载。
+    开头那行 `<!-- 由 life export 生成 -->` 是给人和工具看的元信息，显示时去掉。
+    """
+    行们 = [行 for 行 in 正文.splitlines() if not 行.strip().startswith("<!--")]
+    显示 = "\n".join(行们).strip()
+    内容 = (
+        _简易markdown(显示)
+        if 名字.endswith(".md")
+        else "".join(f"<p>{e(段)}</p>" for 段 in 显示.split("\n\n") if 段.strip())
+    )
+    块 = [
+        f"<section><h2>{e(名字)}</h2>",
+        '<p class="actions"><a class="btn plain" '
+        f'href="/exports/{q(名字)}?raw=1">下载原文件</a>'
+        '<a class="btn plain" href="/export">回导出</a></p>',
+        f'<article class="card text 导出">{内容}</article></section>',
+    ]
+    return 布局(名字, "\n".join(块), 活跃="/export", 令牌=令牌)
 
 
 # ── 设置 ─────────────────────────────────────────────────────
@@ -960,6 +1047,7 @@ form.inline{display:inline-block;margin:0}
 .hint,.meta,.facts{font:400 12px/1.7 var(--等宽);color:var(--墨淡)}
 .facts{margin:0 0 20px;letter-spacing:.02em}
 .hint{margin:8px 0 0}
+.hint.说明{margin:0 0 22px}
 .hint.写什么{margin:14px 0 24px;border-left:2px solid var(--线);padding-left:13px;
   font-size:12.5px;line-height:1.75}
 .hint.写什么 b{color:var(--墨);font-weight:500}
@@ -1067,6 +1155,15 @@ b,strong{font-weight:500}
 footer{margin:72px 0 0;padding:18px 0 0;border-top:1px solid var(--线);
   font:400 11px/1.8 var(--等宽);color:var(--墨淡);letter-spacing:.02em}
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+/* 导出物的正文：保持换行，但用正文字体读——它是给人看的，不是代码 */
+pre.导出物{white-space:pre-wrap;word-break:break-word;background:var(--纸2);
+  border-radius:3px;padding:24px 26px;margin:0;font:16px/1.85 var(--无衬线);color:var(--墨)}
+/* 导出物按段落渲染：章节标题要比元信息大，不然读起来像日志 */
+.card.text.导出 h3{font:500 17px/1.5 var(--衬线);letter-spacing:.01em;color:var(--墨);
+  margin:30px 0 10px}
+.card.text.导出 h4{font:400 15.5px/1.6 var(--衬线);color:var(--墨);margin:22px 0 8px}
+.card.text.导出 .大标题{font:500 22px/1.4 var(--衬线);margin:0 0 18px;color:var(--墨)}
+.card.text.导出 p:first-child{margin-top:0}
 
 /* ── 窄屏 ── */
 @media (max-width:560px){

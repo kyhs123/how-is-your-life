@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import re
 import secrets
 import sys
 import traceback
@@ -23,6 +24,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Callable
 
 from life import config, goal, goalchat, index, jobs, llm, pages, portrait, promote, recorder, retrieve, store, tidy
+from life import export as export模块
 from life import uploads as uploads模块
 
 最大请求体 = 64 * 1024  # 64KB。表单填不出一百个字，再大多半是攻击
@@ -68,6 +70,25 @@ def _安全的回退(值: str) -> str:
         return ""
     路径 = 解析.path
     return 路径 if 路径.startswith("/") else ""
+
+
+# 导出文件名长这样：20261126-1547-简历.md。只认这个形状——
+# 挡掉 ../、绝对路径、其它扩展名，比自己拼路径安全得多。
+导出名模式 = re.compile(r"^[0-9]{8}-[0-9]{4}-[\u4e00-\u9fffA-Za-z0-9]{1,20}\.(md|txt)$")
+
+
+def _导出文件们() -> list[dict]:
+    """`vault/导出/` 里已经导出的文件，新的在前。"""
+    目录 = export模块.导出目录()
+    结果 = []
+    for 路径 in sorted(目录.glob("*"), key=lambda p: p.name, reverse=True):
+        if not 路径.is_file() or not 导出名模式.match(路径.name):
+            continue
+        名 = 路径.name
+        结果.append(
+            {"名字": 名, "时间": f"{名[4:6]}-{名[6:8]} {名[9:11]}:{名[11:13]}"}
+        )
+    return 结果
 
 
 def _统计() -> dict:
@@ -146,6 +167,8 @@ class 处理器(BaseHTTPRequestHandler):
     令牌 = ""
     允许的主机: tuple[str, ...] = ()
     允许的来源: frozenset[str] = frozenset()
+    # 上一次导出的（要求, 模板）。后台任务是无参的，重试时靠它重跑同一份要求。
+    最后一次导出: tuple[str, str] = ("", "")
 
     # 默认每次请求都打到 stderr，太吵
     def log_message(self, 格式: str, *参数) -> None:  # noqa: A002
@@ -294,6 +317,13 @@ class 处理器(BaseHTTPRequestHandler):
             self._章节页(urllib.parse.unquote(路径[len("/chapters/") :]))
         elif 路径 == "/portrait":
             self._画像页()
+        elif 路径.startswith("/exports/"):
+            self._看导出(
+                urllib.parse.unquote(路径[len("/exports/") :]),
+                原始="raw=1" in (urllib.parse.urlparse(self.path).query or ""),
+            )
+        elif 路径 == "/export":
+            self._导出页()
         elif 路径.startswith("/jobs/"):
             self._任务页(urllib.parse.unquote(路径[len("/jobs/") :]))
         elif 路径 == "/settings":
@@ -457,6 +487,73 @@ class 处理器(BaseHTTPRequestHandler):
             ),
         )
 
+    # ── 导出（life export 的网页入口）────────────────────────
+
+    def _导出页(self, *, 提示: str = "", 状态: int = HTTPStatus.OK, 草稿: str = "") -> None:
+        self._页面(
+            状态,
+            pages.导出页(
+                self.令牌,
+                list(export模块.模板们),
+                上次们=_导出文件们(),
+                提示=提示,
+                草稿=草稿,
+            ),
+        )
+
+    def _起导出(self, 表单: dict[str, str]) -> None:
+        要求 = (表单.get("要求") or "").strip()
+        模板 = (表单.get("模板") or "").strip()
+        if not 要求:
+            self._导出页(提示="先写一句你要什么。", 状态=HTTPStatus.BAD_REQUEST)
+            return
+        try:
+            用的模板 = 模板 or export模块.选模板(要求)
+            if 用的模板 not in export模块.模板们:
+                raise ValueError(f"没有「{用的模板}」这个模板。")
+        except ValueError as 错误:
+            self._导出页(提示=str(错误), 状态=HTTPStatus.BAD_REQUEST, 草稿=要求)
+            return
+
+        # 导出要带参数，但后台任务是「无参函数」——把这一次的要求记在类上，
+        # 失败时任务页的「重试」还能用同一份要求重跑。
+        处理器.最后一次导出 = (要求, 用的模板)
+        任务, _新 = jobs.启动(
+            "export", f"导出：{用的模板}", self._作业导出, 去向="/export"
+        )
+        self._跳(f"/jobs/{任务.id}")
+
+    def _作业导出(self) -> str:
+        要求, 模板 = 处理器.最后一次导出
+        结果 = export模块.生成(要求, 模板=模板)
+        尾巴 = ""
+        if 结果["可疑数字"]:
+            尾巴 = f"；⚠️ {len(结果['可疑数字'])} 处数字你的记录里没有，发出去前核一下"
+        return f"导出好了：{结果['路径'].name}（用了 {结果['条数']} 条记录）{尾巴}"
+
+    def _看导出(self, 名字: str, *, 原始: bool = False) -> None:
+        if not 导出名模式.match(名字):
+            self._出错(HTTPStatus.NOT_FOUND, "没有这个文件", f"名字：{名字}")
+            return
+        路径 = export模块.导出目录() / 名字
+        if not 路径.is_file():
+            self._出错(HTTPStatus.NOT_FOUND, "没有这个文件", f"名字：{名字}")
+            return
+        内容 = 路径.read_text(encoding="utf-8")
+        if 原始:
+            self._发纯文本(内容)
+            return
+        self._页面(HTTPStatus.OK, pages.导出物(self.令牌, 名字, 内容))
+
+    def _发纯文本(self, 内容: str) -> None:
+        数据 = 内容.encode("utf-8")
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", "text/plain; charset=utf-8")
+        self.send_header("Content-Length", str(len(数据)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(数据)
+
     # ── 后台任务（docs/WEBUI.md §2.6）──
 
     def _任务页(self, 任务号: str) -> None:
@@ -473,6 +570,8 @@ class 处理器(BaseHTTPRequestHandler):
             "reindex": ("重建索引", self._作业索引, "/settings"),
             "retry": ("补抽没抽成的记录", self._作业补抽, "/"),
             "tidy": ("瘦身：清理旧缓存与孤儿全文", self._作业瘦身, "/settings"),
+            # 导出通常从 /export 表单直接起；这一条是为了「重试」能重复上一次的要求
+            "export": ("导出", self._作业导出, "/export"),
         }
         项 = 表.get(动作)
         if 项 is None:
@@ -604,6 +703,8 @@ class 处理器(BaseHTTPRequestHandler):
 
         if 路径 == "/add":
             self._记一条(表单, 文件们)
+        elif 路径 == "/export":
+            self._起导出(表单)
         elif 路径 == "/entries/settle-all":
             self._全部确认()
         elif 路径.startswith("/entries/") and 路径.endswith("/settle"):
