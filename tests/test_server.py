@@ -767,9 +767,9 @@ def test_网页上写未来日期会被拒(临时工作区, 站, 假抽取):
 def test_首页说明可以写以前做过的项目(临时工作区, 站):
     """用户的原话：在「今天做了什么」那里要能看出「以前的项目也可以写」。"""
     _, 页面, _ = 请求(站, "GET", "/")
-    assert "以前做过的项目也写这里" in 页面
+    assert "写以前做过的项目也行" in 页面
     assert "做了什么、用了什么、卡在哪" in 页面
-    assert "你会这个" in 页面
+    assert "日期记不清就空着" in 页面
 
 
 def test_单条页可以改什么时候(临时工作区, 站):
@@ -810,7 +810,8 @@ def test_章节页有归纳按钮和提名处理(临时工作区, 站, monkeypat
     )
     _, 页面, _ = 请求(站, "GET", "/chapters")
     assert 'action="/jobs/settle"' in 页面
-    assert "归纳最近的记录" in 页面
+    assert "归纳一次" in 页面
+    assert "只写提名" in 页面, "得说清归纳不会动记录"
 
 
 def test_点按钮能跑归纳任务(临时工作区, 站, monkeypatch):

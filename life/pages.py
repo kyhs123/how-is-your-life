@@ -71,8 +71,7 @@ def 布局(
 {内容}
 </main>
 <footer>
-  本机界面 · 只绑 <code>127.0.0.1</code>，别人连不进来 ·
-  改的是 <code>vault/</code> 里的 markdown 文件，没有「同步到云」这一步
+  只绑 <code>127.0.0.1</code> · 改的是 <code>vault/</code> 里的 markdown · 没有「同步到云」这一步
 </footer>
 </body>
 </html>
@@ -104,25 +103,22 @@ def 今天(
     </label>
     <label class="sr" for="text">做了什么</label>
     <textarea id="text" name="text" rows="4" maxlength="4000"
-      placeholder="做了什么？带上具体细节最好，比如：&#10;把 OAuth 调通了，卡在 state 参数签名，调了 4 小时&#10;&#10;以前做过的项目也写这里，比如：&#10;大一做了个图书管理系统，Java Swing + MySQL，借阅功能第一次自己写 SQL 关联查询&#10;&#10;只传文件、不写字也可以。"></textarea>
-    <p class="hint 写什么">写以前的项目也行——把 <b>做了什么、用了什么、卡在哪、怎么解决的</b> 写清楚。
-      它会压成一条「你会这个」的证据，将来写简历时能直接拿出来。日期记不清就不要填上面的「什么时候」，
-      或者写「大一」。</p>
+      placeholder="做了什么？细节写得越具体越好，比如：&#10;把 OAuth 调通了，卡在 state 参数签名，调了 4 小时"></textarea>
+    <p class="hint 写什么">写以前做过的项目也行——<b>做了什么、用了什么、卡在哪、怎么解决</b>。
+      日期记不清就空着，或者写「大一」。</p>
     <p class="file">
-      <label for="file">或者传个文件（只传文件不写字也行）</label>
+      <label for="file">或者传个文件（只传文件、不写字也行）</label>
       <input type="file" id="file" name="file"
         accept=".png,.jpg,.jpeg,.webp,.gif,.txt,.md,.docx">
-      <span class="hint">图片 png/jpg/webp/gif（≤8MB）· 文档 txt/md/docx（≤8MB）</span>
+      <span class="hint">图片 png/jpg/webp/gif ｜ 文档 txt/md/docx ｜ 每个 ≤8MB ｜ 图片读完只留文字，原图删掉</span>
     </p>
     <p class="checks">
       <label><input type="checkbox" name="emotion" value="1"> 这是感受，不是做了什么</label>
       <label><input type="checkbox" name="private" value="1"> 只存本地（不发给模型）</label>
       <label><input type="checkbox" name="keep" value="1"> 保留原文件（默认只留文字）</label>
     </p>
-    <p class="actions"><button type="submit">记下来</button>
-      <span class="hint">过去的、记得的、记不清哪天的，都能记。</span></p>
+    <p class="actions"><button type="submit">记下来</button></p>
   </form>
-  <p class="hint">图片会读一遍（OCR 全文留下，原图删掉）；文档会先在本地抽出文字，再压成一句话。</p>
 </section>"""
     )
 
@@ -170,7 +166,6 @@ def 统计块(统计: dict) -> str:
         f"{统计.get('条数', 0)} 条记录",
         f"{统计.get('章节', 0)} 个主题",
         f"{统计.get('目标', 0)} 个目标",
-        f"待确认 {统计.get('待看', 0)}",
     ]
     return f'<p class="facts">{"  ·  ".join(e(x) for x in 项)}</p>'
 
@@ -187,7 +182,7 @@ def 记录列表(
     有更早: bool,
     总数: int,
 ) -> str:
-    块 = ['<section><h2>记录 <small>（共 ' + str(总数) + " 条）</small></h2>"]
+    块 = [f'<section><h2>记录<small>共 {总数} 条</small></h2>']
 
     # 筛选条：纯链接，不用 JS
     部分链 = "".join(
@@ -198,7 +193,10 @@ def 记录列表(
         _筛选项("/entries", 筛选, "档位", str(键), 名)
         for 键, 名 in [("", "全部"), (0, "接触"), (1, "复现"), (2, "产出"), (3, "能讲")]
     )
-    块.append(f'<p class="filters">{部分链}</p><p class="filters">{档位链}</p>')
+    块.append(
+        f'<p class="filters"><span>类型</span>{部分链}</p>'
+        f'<p class="filters"><span>档位</span>{档位链}</p>'
+    )
     if 筛选.get("状态") == "needs_review":
         块.append(
             '<p class="notice">现在只显示「待确认」的记录。'
@@ -274,7 +272,7 @@ def 单条(令牌: str, 条目: dict, *, 错误: str = "", 草稿: dict | None =
   <p class="meta">情绪 {条目["emotion"]["valence"]:+.1f} ｜ 强度 {条目["emotion"]["arousal"]:.1f}
      {"｜ 花了 " + str(条目["minutes"]) + " 分钟" if 条目["minutes"] else ""}
      {"｜ 主题：" + e(条目["chapter"]) if 条目["chapter"] else ""}</p>
-  <p class="meta">目标：{e(条目["goal"]) or "（无）"}</p>
+  {f'<p class="meta">目标：{e(条目["goal"])}</p>' if 条目["goal"] else ""}
 </article>"""
     )
 
@@ -308,8 +306,7 @@ def 单条(令牌: str, 条目: dict, *, 错误: str = "", 草稿: dict | None =
     <p class="actions"><button type="submit">保存</button>
       <a class="btn plain" href="/entries">算了</a></p>
   </form>
-  <p class="hint">改的是 <code>vault/now/{e(条目['ts'][:7])}/{e(条目['id'])}.md</code> 里对应的字段。
-     私密标记不能在这里改（那会改变隐私承诺）。</p>
+  <p class="hint">改的是 <code>vault/now/{e(条目['ts'][:7])}/{e(条目['id'])}.md</code>。私密标记不在这儿改。</p>
 </section>"""
     )
 
@@ -347,11 +344,11 @@ def 提问(
     只看召回: bool = False,
     没做到: list[str] | None = None,
 ) -> str:
-    块 = ['<section><h2>提问 <small>（带着你的旧记录回答）</small></h2>']
+    块 = ['<section><h2>提问<small>带着你的旧记录回答</small></h2>']
     块.append(
         f"""<form method="get" action="/ask">
   <label class="sr" for="q">你想问什么</label>
-  <input id="q" name="q" value="{e(问题)}" placeholder="比如：我好累，感觉什么都没做成" autofocus>
+  <input id="q" name="q" value="{e(问题)}" placeholder="比如：我好累，感觉什么都没做成">
   <p class="checks">
     <label><input type="checkbox" name="dry" value="1"{" checked" if 只看召回 else ""}> 只看召回，不调模型</label>
   </p>
@@ -421,10 +418,7 @@ def 目标列表(令牌: str, 目标们: list[dict], 证据们: dict) -> str:
     else:
         块.append(空状态("还没有目标。想清楚要什么，再立。"))
     块.append('<p class="actions"><a class="btn" href="/goals/new">＋ 新建目标</a></p>')
-    块.append(
-        '<p class="hint">这里不显示完成度、不标红、不催。'
-        "进度看证据，不看百分比。</p>"
-    )
+    块.append('<p class="hint">不显示完成度、不催 —— 进度看证据。</p>')
     块.append("</section>")
     return 布局("目标", "\n".join(块), 活跃="/goals", 令牌=令牌)
 
@@ -462,7 +456,6 @@ def 目标表单(令牌: str, 目标: dict | None, *, 错误: str = "", 草稿: 
     <p class="actions"><button type="submit">{"立这个目标" if 新 else "保存修改"}</button>
       <a class="btn plain" href="/goals">算了</a></p>
   </form>
-  <p class="hint">没有「完成度」这一栏——进度不是线性的，百分比是骗人的。</p>
 </section>""",
     ]
     return 布局("新建目标" if 新 else "修改目标", "\n".join(块), 活跃="/goals", 令牌=令牌)
@@ -523,12 +516,7 @@ def 目标详情(
         if 缺:
             行.append('<p class="blockers">还缺：' + e("；".join(缺)) + "</p>")
     else:
-        行.append(
-            空状态(
-                "还没有记录挂到这个目标上。下面直接写一条就行——"
-                "它会被记成这个目标的证据，不用你再去对名字。"
-            )
-        )
+        行.append(空状态("还没有记录。下面写一条，就是它的证据。"))
 
     行.append(
         f"""<section class="记一条">
@@ -543,22 +531,18 @@ def 目标详情(
     </label>
     <label class="sr" for="goal-text">为这个目标做了什么</label>
     <textarea id="goal-text" name="text" rows="3" maxlength="4000"
-      placeholder="为这个目标做了什么？一句话就够，细节越具体越好。比如：&#10;投了 3 家实习，第 2 家做完笔试&#10;把简历改了一遍，把小车项目挪到了最前面"></textarea>
+      placeholder="为这个目标做了什么？一句话就够，细节越具体越好。比如：&#10;投了 3 家实习，第 2 家做完笔试"></textarea>
     <p class="file">
-      <label for="goal-file">或者传个文件（简历、截图、笔记）</label>
+      <label for="goal-file">或者传个文件（简历、截图、笔记；只传文件也行）</label>
       <input type="file" id="goal-file" name="file"
         accept=".png,.jpg,.jpeg,.webp,.gif,.txt,.md,.docx">
-      <span class="hint">只传文件不写字也行</span>
     </p>
     <p class="checks">
       <label><input type="checkbox" name="private" value="1"> 只存本地（不发给模型）</label>
       <label><input type="checkbox" name="keep" value="1"> 保留原文件</label>
     </p>
-    <p class="actions"><button type="submit">记到这个目标里</button>
-      <span class="hint">记完回到这一页，上面会多一条证据。</span></p>
+    <p class="actions"><button type="submit">记到这个目标里</button></p>
   </form>
-  <p class="hint">这里记的每一条都会算成证据。它只告诉你这个目标底下有几条、
-    各是什么档——不给你打分。</p>
 </section>"""
     )
 
@@ -589,16 +573,13 @@ def 章节列表(
     提名们 = 提名们 or []
     块 = [
         '<section><h2>主题</h2>'
-        '<p class="hint">你真正在忙的那些事。系统把同一件事的记录串到一条线上'
-        '（比如「OAuth 调试」串了三个星期里的 8 条），提名给你，认不认由你。</p>'
-        '<p class="hint">和「目标」的区别：目标是<em>你想做成什么</em>，'
-        "主题是<em>你实际在忙什么</em>——两个不一样才正常。</p>"
+        '<p class="hint">你真正在忙的那些事：系统把同一件事的记录串成一条线，提名给你，认不认由你。</p>'
+        '<p class="hint">目标是<em>你想做成什么</em>，主题是<em>你实际在忙什么</em>。</p>'
         "</section>"
     ]
 
     if 提名们:
         块.append('<h3>等你确认的提名</h3>')
-        块.append('<p class="hint">系统只提名，认不认由你。拒绝过的以后不会再提。</p>')
         for 提名 in 提名们:
             标题 = 提名.get("标题", "")
             块.append(
@@ -636,10 +617,12 @@ def 章节列表(
                 "（点下面的按钮归纳一次试试）。"
             )
         )
-    块.append('<p class="actions">' + 作业按钮(令牌, "settle", "归纳最近的记录（生成提名）") + "</p>")
     块.append(
-        '<p class="hint">主题不是自动生成的：系统提名，你确认。'
-        "归纳只写提名，不会动你的记录。</p>"
+        '<p class="actions">'
+        + 作业按钮(
+            令牌, "settle", "归纳一次", 说明="只写提名，不动你的记录", 次要=True
+        )
+        + "</p>"
     )
     块.append("</section>")
     return 布局("主题", "\n".join(块), 活跃="/chapters", 令牌=令牌)
@@ -776,8 +759,7 @@ def 任务页(令牌: str, 任务) -> str:
             f"{' · 这类活一般要一两分钟' if 秒 < 60 else ''}</p>"
         )
         块.append(
-            '<p class="hint">这个页面每 3 秒自动刷新一次。可以先去做别的，跑完回来看；'
-            "任务在后台继续跑，关掉页面也不会中断。</p>"
+            '<p class="hint">每 3 秒自动刷新。可以去做别的，关掉页面不会中断任务。</p>'
         )
     elif 任务.状态 == "failed":
         块.append(pages_错误(任务.错误))
@@ -829,119 +811,208 @@ def 消息(令牌: str, 标题: str, 说明: str) -> str:
 
 def 样式() -> str:
     return """
+/* ── 纸与墨：杂志风，光源下是「森林墨」，暗处是「午夜墨」──────────
+   规矩（docs/WEBUI.md §4）：不用纯白纯黑；只有一个强调色；
+   分区靠间距不靠线；全文最多两条粗线（页头那条 + 表格首行那条）。 */
 :root{
-  --纸:#faf8f4; --墨:#22201d; --淡:#7b746c; --线:#e2ddd4; --卡:#fffdf9;
-  --点:#7d9b76; --好:#5c8a52; --坏:#b5544a;
-  --接触:#c9c3b8; --复现:#a8b8a0; --产出:#7d9b76; --能讲:#4d6b46;
+  --纸:#f5f1e8; --纸2:#eee8db; --墨:#1a2e1f; --墨淡:#5f6b5c; --线:#d9d1c1;
+  --点:#2e6b4f; --坏:#8c3f36;
+  --档0:#a9a294; --档1:#8aa88f; --档2:#4f7f60; --档3:#2e6b4f;
+  --衬线:"Noto Serif SC","Source Han Serif SC","Songti SC","SimSun",Georgia,serif;
+  --无衬线:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+  --等宽:"IBM Plex Mono",ui-monospace,"Cascadia Mono",Consolas,monospace;
 }
-@media (prefers-color-scheme: dark){
-  :root{ --纸:#1b1a18; --墨:#e8e3da; --淡:#9a938a; --线:#332f2b; --卡:#232120;
-    --点:#8fae86; --好:#8dbb82; --坏:#d0857b;
-    --接触:#4a453f; --复现:#4e5d48; --产出:#5f7a59; --能讲:#9cc094; }
+@media (prefers-color-scheme:dark){
+  :root{ --纸:#0e0d0c; --纸2:#1a1815; --墨:#ece2cf; --墨淡:#9c917f; --线:#2c2723;
+    --点:#d4a04a; --坏:#c98b7f;
+    --档0:#6b6357; --档1:#7d8f7a; --档2:#a8c39f; --档3:#e0ab56; }
 }
+
 *{box-sizing:border-box}
-body{margin:0 auto;max-width:720px;padding:0 18px 64px;background:var(--纸);color:var(--墨);
-  font:15px/1.7 "Microsoft YaHei","PingFang SC","Hiragino Sans GB",system-ui,sans-serif;
-  -webkit-text-size-adjust:100%}
-a{color:var(--能讲)} a:hover{text-decoration:none}
-header{padding:22px 0 10px;border-bottom:1px solid var(--线);margin-bottom:22px}
-.brand{margin:0 0 8px;font-size:19px;letter-spacing:.04em}
-.brand a{color:var(--墨);text-decoration:none}
-nav{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:13px}
-nav a{color:var(--淡);text-decoration:none;padding:2px 0;border-bottom:2px solid transparent}
-nav a:hover{color:var(--墨)}
+body{margin:0 auto;max-width:660px;padding:0 22px 72px;background:var(--纸);color:var(--墨);
+  font:16px/1.75 var(--无衬线);-webkit-text-size-adjust:100%}
+a{color:var(--点);text-decoration:none;text-underline-offset:.2em}
+a:hover{text-decoration:underline}
+p{margin:0 0 1em}
+/* 输入框聚焦给一圈柔光，别用硬描边（autofocus 一进来就是个刺眼的黄框） */
+input:focus,textarea:focus,select:focus{outline:none;border-color:var(--点);
+  box-shadow:0 0 0 3px color-mix(in srgb,var(--点) 18%,transparent)}
+a:focus-visible,button:focus-visible,.btn:focus-visible{outline:2px solid var(--点);
+  outline-offset:2px}
+
+/* ── 页头：一行报头 + 一条粗线，别处不再画线 ── */
+header{padding:34px 0 0;margin:0 0 40px}
+.brand{margin:0 0 16px;font:500 21px/1.3 var(--衬线);letter-spacing:.01em}
+.brand a{color:var(--墨)}
+.brand a:hover{text-decoration:none}
+nav{display:flex;flex-wrap:wrap;gap:22px;padding:0 0 10px;
+  font:400 11.5px/1 var(--等宽);letter-spacing:.14em;border-bottom:2px solid var(--墨)}
+nav a{color:var(--墨淡);padding-bottom:10px;margin-bottom:-10px;border-bottom:2px solid transparent}
+nav a:hover{color:var(--墨);text-decoration:none}
 nav a[aria-current=page]{color:var(--墨);border-bottom-color:var(--点)}
-h2{font-size:14px;color:var(--淡);letter-spacing:.06em;margin:26px 0 10px;font-weight:600}
-h2 small,h3 small{font-weight:400;letter-spacing:0;color:var(--淡)}
-h3{font-size:13px;color:var(--淡);margin:20px 0 8px;letter-spacing:.06em}
-h4{font-size:13px;margin:16px 0 6px}
-section{margin:0 0 28px}
-textarea,input[type=text],input:not([type]),select{width:100%;margin-top:6px;padding:9px 10px;
-  font:inherit;color:var(--墨);background:var(--卡);border:1px solid var(--线);border-radius:6px}
-textarea{resize:vertical;min-height:72px}
-input:focus-visible,textarea:focus-visible,select:focus-visible,button:focus-visible,
-a:focus-visible{outline:2px solid var(--点);outline-offset:2px}
-form label{display:block;margin:0 0 12px;font-size:13px;color:var(--淡)}
-.hint.写什么{background:color-mix(in srgb,var(--点) 8%,transparent);border-left:2px solid var(--点);
-  padding:8px 12px;border-radius:0 6px 6px 0;margin:10px 0 0;line-height:1.6}
-.hint.写什么 b{color:var(--墨);font-weight:600}
-.when{display:block;font-size:13px;color:var(--淡);margin:0 0 12px}
-.when input{margin-top:5px}
-.checks{display:flex;flex-wrap:wrap;gap:16px;margin:10px 0 6px}
-.checks label{display:flex;align-items:center;gap:6px;margin:0;font-size:13px;color:var(--淡)}
+
+/* ── 分区：靠 46px 的空白分开，不画线 ── */
+section{margin:0 0 46px}
+.记一条{background:var(--纸2);border-radius:3px;padding:26px 26px 4px;margin:0 0 52px}
+.记一条 h2{margin-bottom:20px}
+/* 面板里再用纸色填输入框，不然输入框和面板一个颜色，看不出边界 */
+.记一条 input,.记一条 textarea,.记一条 select{background:var(--纸)}
+h2{margin:0 0 18px;font:500 19px/1.4 var(--衬线);letter-spacing:.01em}
+h2 small{margin-left:10px;font:400 11.5px/1 var(--等宽);letter-spacing:.12em;color:var(--墨淡)}
+h3{margin:0 0 10px;font:400 11.5px/1 var(--等宽);letter-spacing:.14em;color:var(--墨淡)}
+h4{margin:22px 0 8px;font:500 15px/1.5 var(--衬线)}
+
+/* ── 表单 ── */
+label{display:block;margin:0 0 16px;font-size:12.5px;color:var(--墨淡)}
+input,textarea,select{width:100%;margin-top:7px;padding:11px 13px;font:16px/1.5 var(--无衬线);
+  color:var(--墨);background:var(--纸2);border:1px solid var(--线);border-radius:3px}
+textarea{min-height:104px;resize:vertical}
+.when{display:block;font:400 11.5px/1 var(--等宽);letter-spacing:.08em;color:var(--墨淡);
+  margin:0 0 18px}
+.checks{display:flex;flex-wrap:wrap;gap:20px;margin:4px 0 14px}
+.checks label{display:flex;align-items:center;gap:7px;margin:0;font-size:12.5px}
 .checks input{width:auto;margin:0}
-.file{margin:14px 0 4px}
-.file label{display:block;font-size:13px;color:var(--淡);margin:0 0 6px}
-.file input[type=file]{width:100%;padding:8px;font-size:13px;background:var(--卡);
-  border:1px dashed var(--线);border-radius:6px;color:var(--淡)}
-.file .hint{display:block;margin-top:5px}
-.actions{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:12px 0 0}
+.file{margin:0 0 18px}
+.file label{font:400 11.5px/1 var(--等宽);letter-spacing:.08em;margin:0 0 9px}
+.file input[type=file]{width:100%;padding:10px;font-size:12.5px;background:var(--纸2);
+  border:1px dashed var(--线);border-radius:3px;color:var(--墨淡)}
+/* 浏览器自带的那个「选择文件」是个纯白小方块，在暗色里特别扎眼，单独收拾一下 */
+input[type=file]::file-selector-button{font:400 13px/1 var(--无衬线);margin-right:12px;
+  padding:8px 14px;border:1px solid var(--线);border-radius:2px;background:var(--纸);
+  color:var(--墨);cursor:pointer}
+input[type=checkbox]{width:15px;height:15px;accent-color:var(--点)}
+.file .hint{display:block;margin-top:7px}
+
+/* ── 按钮：只有一个强调色 ── */
+button,.btn{display:inline-block;font:400 14px/1 var(--无衬线);padding:11px 20px;
+  border:1px solid var(--点);border-radius:3px;background:var(--点);color:var(--纸);
+  cursor:pointer;text-decoration:none}
+button:hover,.btn:hover{filter:brightness(1.08);text-decoration:none}
+button.plain,.btn.plain{background:transparent;color:var(--墨淡);border-color:var(--线)}
+button.plain:hover,.btn.plain:hover{color:var(--墨);filter:none}
+.actions{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin:18px 0 0}
 form.inline{display:inline-block;margin:0}
-button.plain{background:transparent;color:var(--淡);border-color:var(--线)}
-button.plain:hover{color:var(--墨)}
-button{font:inherit;padding:7px 16px;border-radius:6px;border:1px solid var(--点);
-  background:var(--点);color:#fff;cursor:pointer}
-button:hover{filter:brightness(1.06)}
-.btn{display:inline-block;padding:6px 15px;border-radius:6px;border:1px solid var(--点);
-  background:var(--点);color:#fff;text-decoration:none;font-size:14px}
-.btn.plain{background:transparent;color:var(--淡);border-color:var(--线);cursor:pointer}
-.hint{color:var(--淡);font-size:12px;margin:6px 0}
-.meta{color:var(--淡);font-size:12.5px;margin:4px 0}
-.facts{color:var(--淡);font-size:12.5px;margin:10px 0}
-.notice{background:color-mix(in srgb,var(--点) 12%,transparent);border:1px solid var(--线);
-  border-radius:8px;padding:10px 12px;font-size:13px;margin:0 0 18px}
-.error{color:var(--坏);font-size:13px;border-left:3px solid var(--坏);padding:6px 10px;margin:0 0 14px}
-.empty{color:var(--淡);font-size:13px}
-.card{background:var(--卡);border:1px solid var(--线);border-radius:8px;padding:14px 16px;margin:0 0 12px}
-.card.answer{border-left:3px solid var(--点);font-size:15px;line-height:1.8}
-.card.text h3:first-child{margin-top:0}
-.did{font-size:15px}
-.did.big{font-size:17px;margin:8px 0}
-blockquote{margin:10px 0 6px;padding:4px 12px;border-left:2px solid var(--线);color:var(--淡);font-size:13.5px}
-.anchors{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}
-.anchors span{font-size:12px;color:var(--淡);background:var(--线);padding:1px 7px;border-radius:4px}
-.blockers{color:var(--坏);font-size:13px;margin:8px 0}
-.why{font-size:14px;color:var(--墨);border-left:2px solid var(--线);padding-left:12px;margin:10px 0}
-.badge{display:inline-block;font-size:11px;padding:1px 7px;border-radius:999px;
-  background:var(--线);color:var(--墨);vertical-align:1px}
-.badge.l0{background:var(--接触)} .badge.l1{background:var(--复现)}
-.badge.l2{background:var(--产出);color:#fff} .badge.l3{background:var(--能讲);color:#fff}
-.badge.plain{background:transparent;border:1px solid var(--线);color:var(--淡)}
-.badge.priv{background:transparent;border:1px solid var(--坏);color:var(--坏)}
-.badge.review{background:transparent;border:1px dashed var(--线);color:var(--淡)}
+
+/* ── 元信息一律等宽小字：标签、时间、事实 ── */
+.hint,.meta,.facts{font:400 12px/1.7 var(--等宽);color:var(--墨淡)}
+.facts{margin:0 0 20px;letter-spacing:.02em}
+.hint{margin:8px 0 0}
+.hint.写什么{margin:14px 0 24px;border-left:2px solid var(--线);padding-left:13px;
+  font-size:12.5px;line-height:1.75}
+.hint.写什么 b{color:var(--墨);font-weight:500}
+
+/* ── 提示与状态 ── */
+.notice{margin:0 0 24px;padding:14px 16px;background:var(--纸2);
+  border-left:2px solid var(--点);border-radius:0 3px 3px 0;font-size:14px}
+.error{margin:0 0 22px;padding:4px 0 4px 14px;border-left:2px solid var(--坏);
+  color:var(--坏);font-size:14px;line-height:1.7}
+.empty{font-size:14px;color:var(--墨淡);margin:0 0 20px}
+
+/* ── 卡片：靠底色区分，不描边 ── */
+.card{background:var(--纸2);border:0;border-radius:3px;padding:20px 22px;margin:0 0 22px}
+.card.text h3:first-child,.card.text h4:first-child{margin-top:0}
+.card.text p:last-child{margin-bottom:0}
+.card.answer{font-size:16.5px;line-height:1.85;border-left:2px solid var(--点);
+  border-radius:0 3px 3px 0}
+.card.answer p:last-child{margin-bottom:0}
+.card .meta{margin:6px 0 0}
+
+/* ── 一句话：单条页那句当标题读 ── */
+.did{font-size:15.5px}
+.did.big{font:400 22px/1.5 var(--衬线);margin:12px 0 16px;letter-spacing:.01em}
+
+/* ── 档位：读作「一个小圆点 + 一个词」，不用彩色胶囊 ── */
+.badge{display:inline-flex;align-items:center;gap:7px;font:400 11px/1 var(--等宽);
+  letter-spacing:.08em;color:var(--墨淡);white-space:nowrap}
+.badge::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--档0);flex:none}
+.badge.l0::before{background:var(--档0)}
+.badge.l1::before{background:var(--档1)}
+.badge.l2::before{background:var(--档2)}
+.badge.l3::before{background:var(--档3)}
+.badge.plain,.badge.review{border:1px solid var(--线);border-radius:2px;padding:4px 7px;
+  letter-spacing:.08em}
+.badge.plain::before,.badge.review::before{display:none}
+.badge.review{border-style:dashed}
+.badge.priv{color:var(--坏)}
+.badge.priv::before{background:var(--坏)}
+
+/* ── 记录流 ── */
 ul.流{list-style:none;padding:0;margin:0}
-ul.流 li{border-bottom:1px solid var(--线)}
-ul.流 li:last-child{border-bottom:none}
-ul.流 a{display:flex;gap:8px;align-items:baseline;padding:9px 0;text-decoration:none;color:inherit}
-ul.流 a:hover .did{color:var(--能讲)}
-ul.流 .when{color:var(--淡);font-size:12px;font-variant-numeric:tabular-nums;min-width:70px}
-ul.流 .did{flex:1}
-.month{font-size:13px;color:var(--淡);border-bottom:1px solid var(--线);padding:20px 0 8px;margin:0 0 6px}
-.filters{display:flex;flex-wrap:wrap;gap:12px;font-size:13px;margin:0 0 8px}
-.filters a{color:var(--淡);text-decoration:none}
-.filters a.on{color:var(--墨);border-bottom:2px solid var(--点)}
-.more{margin:16px 0;font-size:13px}
+ul.流 li{border-top:1px solid var(--线)}
+ul.流 li:first-child{border-top:none}
+ul.流 a{display:flex;gap:14px;align-items:baseline;padding:12px 0;color:inherit}
+ul.流 a:hover{text-decoration:none}
+ul.流 a:hover .did{color:var(--点)}
+ul.流 .when{flex:none;min-width:78px;font:400 11.5px/1.5 var(--等宽);color:var(--墨淡);
+  letter-spacing:.02em;font-variant-numeric:tabular-nums}
+ul.流 .did{flex:1;font-size:15px;line-height:1.65}
+.month{display:flex;justify-content:space-between;align-items:baseline;margin:38px 0 4px;
+  padding:0 0 9px;border-bottom:1px solid var(--线);
+  font:400 11.5px/1 var(--等宽);letter-spacing:.14em;color:var(--墨淡)}
+.month small{font:inherit;letter-spacing:.06em}
+.filters{display:flex;flex-wrap:wrap;align-items:baseline;gap:20px;margin:0 0 12px;
+  font:400 11.5px/1 var(--等宽);letter-spacing:.08em}
+.filters span{color:var(--墨淡);opacity:.65}
+.filters a{color:var(--墨淡);padding-bottom:5px;border-bottom:2px solid transparent}
+.filters a:hover{color:var(--墨);text-decoration:none}
+.filters a.on{color:var(--墨);border-bottom-color:var(--点)}
+.more{margin:24px 0;font:400 12px/1.6 var(--等宽)}
+.more a{color:var(--墨淡)}
+
+/* ── 目标 / 主题列表 ── */
 ul.目标们{list-style:none;padding:0;margin:0}
-ul.目标们 li{border-bottom:1px solid var(--线)}
-ul.目标们 a{display:block;padding:11px 0;text-decoration:none;color:inherit}
-ul.目标们 .title{font-size:15px}
-ul.目标们 .tag{float:right;font-size:12px;color:var(--淡);border:1px solid var(--线);
-  border-radius:999px;padding:0 8px}
-ul.目标们 .meta{display:block;color:var(--淡);font-size:12px}
-ul.档位{list-style:none;padding:0;margin:8px 0}
-ul.档位 li{padding:6px 0;font-size:13.5px}
-ul.档位 .meta{color:var(--淡)}
-.cmd code{display:inline-block;background:var(--线);padding:6px 10px;border-radius:6px;font-size:12.5px}
-table.info{width:100%;border-collapse:collapse;font-size:13px}
-table.info th{text-align:left;color:var(--淡);font-weight:400;padding:7px 10px 7px 0;
-  border-bottom:1px solid var(--线);white-space:nowrap;vertical-align:top;width:34%}
-table.info td{padding:7px 0;border-bottom:1px solid var(--线);word-break:break-all}
-footer{margin-top:40px;padding-top:14px;border-top:1px solid var(--线);color:var(--淡);font-size:12px}
-code{background:var(--线);padding:1px 5px;border-radius:4px;font-size:12px}
+ul.目标们 li{border-top:1px solid var(--线)}
+ul.目标们 a{display:block;padding:16px 0;color:inherit}
+ul.目标们 a:hover{text-decoration:none}
+ul.目标们 a:hover .title{color:var(--点)}
+ul.目标们 .title{font:400 17px/1.45 var(--衬线)}
+ul.目标们 .tag{margin-left:10px;padding:4px 7px;border:1px solid var(--线);border-radius:2px;
+  font:400 10.5px/1 var(--等宽);letter-spacing:.1em;color:var(--墨淡);vertical-align:2px}
+ul.目标们 .meta{display:block;margin:7px 0 0;font:400 11.5px/1.6 var(--等宽);color:var(--墨淡)}
+
+/* ── 证据卡的档位分布 ── */
+ul.档位{list-style:none;padding:0;margin:0 0 30px}
+ul.档位 li{display:flex;gap:12px;align-items:baseline;padding:10px 0;
+  border-top:1px solid var(--线);font-size:14.5px}
+ul.档位 li:first-child{border-top:none}
+ul.档位 b{font:500 15px/1 var(--等宽);font-variant-numeric:tabular-nums}
+ul.档位 .meta{margin:0;flex:1}
+
+/* ── 三线表（设置页）── */
+table.info{width:100%;border-collapse:collapse;font-size:14px;margin:0 0 8px}
+table.info tr:first-child th,table.info tr:first-child td{border-top:2px solid var(--墨)}
+table.info th,table.info td{padding:12px 0;border-bottom:1px solid var(--线);
+  text-align:left;vertical-align:top}
+table.info th{width:32%;padding-right:18px;white-space:nowrap;
+  font:400 11.5px/1.7 var(--等宽);letter-spacing:.06em;color:var(--墨淡)}
+table.info td{word-break:break-all}
+
+/* ── 零碎 ── */
+.anchors{display:flex;flex-wrap:wrap;gap:7px;margin:14px 0 0}
+.anchors span{padding:4px 8px;border:1px solid var(--线);border-radius:2px;
+  font:400 11px/1 var(--等宽);color:var(--墨淡)}
+.blockers{color:var(--坏);font-size:14px;margin:12px 0 0}
+.why{font:400 15.5px/1.75 var(--衬线);border-left:2px solid var(--线);padding-left:15px;
+  margin:16px 0}
+blockquote{margin:16px 0;padding:2px 0 2px 16px;border-left:2px solid var(--点);
+  font:400 15.5px/1.85 var(--衬线)}
+blockquote p:last-child{margin-bottom:0}
+code{font:400 12.5px/1.5 var(--等宽);background:var(--纸2);padding:2px 6px;border-radius:2px}
+/* 中文不用伪斜体；强调用强调色（着重号在小字号界面上会糊成一片，实测不好看） */
+em,i{font-style:normal;color:var(--点)}
+b,strong{font-weight:500}
+footer{margin:72px 0 0;padding:18px 0 0;border-top:1px solid var(--线);
+  font:400 11px/1.8 var(--等宽);color:var(--墨淡);letter-spacing:.02em}
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
-@media (max-width:520px){
-  body{padding:0 12px 48px}
-  ul.流 a{flex-wrap:wrap}
+
+/* ── 窄屏 ── */
+@media (max-width:560px){
+  body{padding:0 16px 56px}
+  header{padding-top:24px;margin-bottom:32px}
+  h2{font-size:18px}
+  nav{gap:16px}
+  .card{padding:16px 16px}
+  ul.流 a{flex-wrap:wrap;gap:6px 12px}
   ul.流 .did{flex-basis:100%}
 }
 """
